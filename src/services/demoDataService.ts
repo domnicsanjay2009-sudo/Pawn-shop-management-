@@ -237,9 +237,33 @@ class DemoStore {
   }
 
   public closeBill(closing: Omit<ClosingBill, 'id' | 'closedAt'>): ClosingBill {
+    const computedTotal = (closing.cashPaise || 0) + (closing.upiPaise || 0) + (closing.netBankingPaise || 0);
+    const totalAllocated = closing.totalAllocatedPaise !== undefined ? closing.totalAllocatedPaise : computedTotal;
+
+    // 2.3 Strict Zero Payment Validation
+    if (totalAllocated <= 0 || closing.finalSettlementAmountPaise <= 0) {
+      throw new Error('Cannot close this bill. Payment amount must be greater than ₹0.00.');
+    }
+
+    // 3.4 Strict Settlement Reconciliation
+    if (totalAllocated !== closing.finalSettlementAmountPaise) {
+      throw new Error('Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before closing this bill.');
+    }
+
+    // 2.2 Default Name Logic
+    let resolvedClosedBy = (closing.closedBy || '').trim();
+    if (!resolvedClosedBy) {
+      resolvedClosedBy = closing.partyName;
+    }
+    if (!resolvedClosedBy.toLowerCase().startsWith('closed by:')) {
+      resolvedClosedBy = `Closed By: ${resolvedClosedBy}`;
+    }
+
     const newClose: ClosingBill = {
       ...closing,
       id: `demo_close_${Date.now()}`,
+      closedBy: resolvedClosedBy,
+      totalAllocatedPaise: totalAllocated,
       closedAt: Date.now(),
     };
     this.closingBills.unshift(newClose);
@@ -248,8 +272,8 @@ class DemoStore {
     if (bill) {
       bill.status = 'Closed';
       bill.currentPrincipalPaise = 0;
-      bill.closedAt = Date.now();
-      bill.closedBy = closing.closedBy;
+      bill.closedAt = newClose.closedAt;
+      bill.closedBy = resolvedClosedBy;
       bill.closedByUid = closing.closedByUid;
       bill.closingTransactionId = closing.closingTransactionId;
       bill.closingNotes = closing.notes;

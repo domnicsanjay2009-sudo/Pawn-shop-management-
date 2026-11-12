@@ -378,7 +378,11 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
                           {isClosed && (
                             <div className="mt-2 pt-2 border-t border-slate-200/70 text-[11px] text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
                               <span className="font-semibold text-slate-700">
-                                Closed By: <span className="text-brand-950 font-bold">{bill.closedBy || 'Authorized Staff'}</span>
+                                <span className="text-brand-950 font-bold">
+                                  {bill.closedBy
+                                    ? (bill.closedBy.toLowerCase().startsWith('closed by:') ? bill.closedBy : `Closed By: ${bill.closedBy}`)
+                                    : 'Closed By: Authorized Staff'}
+                                </span>
                               </span>
                               {bill.closedAt && (
                                 <span>Closed On: {formatDateTime(bill.closedAt)}</span>
@@ -516,7 +520,11 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
                       {/* Audit Details */}
                       <div className="mt-1 text-[11px] text-slate-600 flex flex-wrap items-center gap-x-2">
                         <span className="font-semibold text-slate-800">
-                          Closed By: <span className="text-brand-950 font-bold">{closing.closedBy || 'Authorized Staff'}</span>
+                          <span className="text-brand-950 font-bold">
+                            {closing.closedBy
+                              ? (closing.closedBy.toLowerCase().startsWith('closed by:') ? closing.closedBy : `Closed By: ${closing.closedBy}`)
+                              : 'Closed By: Authorized Staff'}
+                          </span>
                         </span>
                         {closing.closingTransactionId && (
                           <span className="font-mono text-[10px] text-slate-400">

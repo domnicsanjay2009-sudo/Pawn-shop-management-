@@ -3,7 +3,7 @@ import { X, CreditCard, Calendar, IndianRupee, Loader2, ArrowRight } from 'lucid
 import { Party, Bill, PaymentMode } from '../../types';
 import { rupeesToPaise, allocatePayment, evaluateBillStatus } from '../../utils/calculations';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
-import { SplitPaymentSelector, SplitPaymentState } from './SplitPaymentSelector';
+import { SplitPaymentSelector, SplitPaymentState, parseInputRupeesToPaise } from './SplitPaymentSelector';
 
 interface AddPaymentModalProps {
   party: Party;
@@ -34,9 +34,6 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
 
   // Multi-Mode Split Payment Allocation State (Module 7)
   const [splitState, setSplitState] = useState<SplitPaymentState>({
-    cashSelected: true,
-    upiSelected: false,
-    netBankingSelected: false,
     cashRupees: '',
     upiRupees: '',
     netBankingRupees: '',
@@ -51,23 +48,15 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
     return isNaN(parsed) || parsed <= 0 ? 0 : rupeesToPaise(parsed);
   }, [amountRupees]);
 
-  // Synchronize single selected mode amount when agreed amount is typed
+  // Synchronize Cash amount when agreed amount is typed if UPI & Net Banking are empty
   useEffect(() => {
-    const activeCount =
-      (splitState.cashSelected ? 1 : 0) +
-      (splitState.upiSelected ? 1 : 0) +
-      (splitState.netBankingSelected ? 1 : 0);
+    const upiVal = parseInputRupeesToPaise(splitState.upiRupees);
+    const netVal = parseInputRupeesToPaise(splitState.netBankingRupees);
 
-    if (activeCount === 1) {
-      if (splitState.cashSelected) {
-        setSplitState((prev) => ({ ...prev, cashRupees: amountRupees }));
-      } else if (splitState.upiSelected) {
-        setSplitState((prev) => ({ ...prev, upiRupees: amountRupees }));
-      } else if (splitState.netBankingSelected) {
-        setSplitState((prev) => ({ ...prev, netBankingRupees: amountRupees }));
-      }
+    if (upiVal === 0 && netVal === 0) {
+      setSplitState((prev) => ({ ...prev, cashRupees: amountRupees }));
     }
-  }, [amountRupees, splitState.cashSelected, splitState.upiSelected, splitState.netBankingSelected]);
+  }, [amountRupees]);
 
   // Real-time calculation of allocation
   const allocationBreakdown = useMemo(() => {
@@ -82,9 +71,9 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
     };
   }, [currentBill, agreedAmountPaise, paymentDate]);
 
-  const cashPaise = splitState.cashSelected ? rupeesToPaise(splitState.cashRupees) : 0;
-  const upiPaise = splitState.upiSelected ? rupeesToPaise(splitState.upiRupees) : 0;
-  const netBankingPaise = splitState.netBankingSelected ? rupeesToPaise(splitState.netBankingRupees) : 0;
+  const cashPaise = parseInputRupeesToPaise(splitState.cashRupees);
+  const upiPaise = parseInputRupeesToPaise(splitState.upiRupees);
+  const netBankingPaise = parseInputRupeesToPaise(splitState.netBankingRupees);
   const totalAllocatedPaise = cashPaise + upiPaise + netBankingPaise;
   const isAllocationExact = totalAllocatedPaise === agreedAmountPaise && agreedAmountPaise > 0;
 
@@ -98,33 +87,22 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
       return;
     }
 
-    if (agreedAmountPaise <= 0) {
-      setError('Please enter a valid agreed payment amount.');
+    if (agreedAmountPaise <= 0 || totalAllocatedPaise <= 0) {
+      setError('Payment amount must be greater than ₹0.00.');
       return;
     }
 
-    // Split payment exact reconciliation check (Paise precision)
-    if (!splitState.cashSelected && !splitState.upiSelected && !splitState.netBankingSelected) {
-      setError('Please select at least one payment mode (Cash, GPay/PhonePe, or Net Banking).');
-      return;
-    }
-
-    if (totalAllocatedPaise < agreedAmountPaise) {
-      const diff = agreedAmountPaise - totalAllocatedPaise;
-      setError(`Reconciliation failed: Underpayment by ${formatCurrencyPaise(diff)}. Split allocations must match agreed payment exactly.`);
-      return;
-    }
-
-    if (totalAllocatedPaise > agreedAmountPaise) {
-      const diff = totalAllocatedPaise - agreedAmountPaise;
-      setError(`Reconciliation failed: Overpayment by ${formatCurrencyPaise(diff)}. Split allocations must match agreed payment exactly.`);
+    if (totalAllocatedPaise !== agreedAmountPaise) {
+      setError(
+        'Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before recording this payment.'
+      );
       return;
     }
 
     const activeModes: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[] = [];
-    if (splitState.cashSelected && cashPaise > 0) activeModes.push('Cash');
-    if (splitState.upiSelected && upiPaise > 0) activeModes.push('GPay / PhonePe');
-    if (splitState.netBankingSelected && netBankingPaise > 0) activeModes.push('Net Banking');
+    if (cashPaise > 0) activeModes.push('Cash');
+    if (upiPaise > 0) activeModes.push('GPay / PhonePe');
+    if (netBankingPaise > 0) activeModes.push('Net Banking');
 
     const summaryMode: PaymentMode = activeModes.length > 1
       ? 'Split'

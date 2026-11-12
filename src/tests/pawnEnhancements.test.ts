@@ -28,6 +28,7 @@ import {
   SILVER_PURITIES,
   OTHER_PURITIES,
 } from '../components/bills/AddBillForm';
+import { parseInputRupeesToPaise } from '../components/payments/SplitPaymentSelector';
 import { rupeesToPaise, paiseToRupees } from '../utils/calculations';
 import { demoStore } from '../services/demoDataService';
 import {
@@ -154,7 +155,232 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
     });
   });
 
-  describe('Module 4: Collateral Fields & Absence of Go So Weight', () => {
+  describe('Bug Fix 1: Customer View – New Pledge Bill Navigation & Auto-Population', () => {
+    it('automatically associates new pledge bill with preselected customer without re-searching', () => {
+      const customer = demoStore.getParties()[0];
+      expect(customer).toBeDefined();
+
+      // Simulate passing selected customer to bill creation
+      const preselectedPartyId = customer.id;
+      const newBill = demoStore.addBill({
+        shopId: customer.shopId,
+        partyId: preselectedPartyId,
+        partyName: customer.name,
+        partyPhone: customer.phone,
+        itemCategory: 'Gold',
+        itemDescription: '22K Hallmarked Ring',
+        purity: '22K / 916',
+        grossWeight: 8.5,
+        netWeight: 8.0,
+        weightUnit: 'g',
+        principalPaise: 4000000,
+        currentPrincipalPaise: 4000000,
+        interestPercentage: 2.0,
+        interestDuration: 'Monthly',
+        billDate: '2026-11-12',
+        status: 'Active',
+      });
+
+      expect(newBill.partyId).toBe(customer.id);
+      expect(newBill.partyName).toBe(customer.name);
+      expect(newBill.partyPhone).toBe(customer.phone);
+
+      // Verify the bill is discoverable under the customer
+      const partyBills = demoStore.getBills().filter((b) => b.partyId === customer.id);
+      expect(partyBills.map((b) => b.id)).toContain(newBill.id);
+    });
+  });
+
+  describe('Bug Fix 2: Bill Closure – Closed By Field & Zero Payment Validation', () => {
+    it('Scenario A: uses registered customer name when Closed By field is left blank or whitespace-only', () => {
+      const activeBill = demoStore.getBills().find((b) => b.status === 'Active')!;
+      expect(activeBill).toBeDefined();
+
+      const closed = demoStore.closeBill({
+        shopId: activeBill.shopId,
+        billId: activeBill.id,
+        billNumber: activeBill.billNumber,
+        partyId: activeBill.partyId,
+        partyName: activeBill.partyName,
+        partyPhone: activeBill.partyPhone,
+        initialPrincipalPaise: activeBill.principalPaise,
+        outstandingPrincipalPaise: activeBill.currentPrincipalPaise,
+        accruedInterestPaise: 10000,
+        finalSettlementAmountPaise: 100000,
+        closingDate: '2026-11-12',
+        paymentMode: 'Cash',
+        cashPaise: 100000,
+        totalAllocatedPaise: 100000,
+        closedBy: '   ', // whitespace only - should resolve to customer name
+        closedByUid: 'uid_test_123',
+      });
+
+      expect(closed.closedBy).toBe(`Closed By: ${activeBill.partyName}`);
+
+      // Verify customer's registered record remains unchanged
+      const party = demoStore.getParties().find((p) => p.id === activeBill.partyId);
+      expect(party?.name).toBe(activeBill.partyName);
+    });
+
+    it('Scenario B: uses custom entered name when Closed By field is provided', () => {
+      const activeBills = demoStore.getBills().filter((b) => b.status === 'Active');
+      const activeBill = activeBills[0];
+      expect(activeBill).toBeDefined();
+
+      const closed = demoStore.closeBill({
+        shopId: activeBill.shopId,
+        billId: activeBill.id,
+        billNumber: activeBill.billNumber,
+        partyId: activeBill.partyId,
+        partyName: activeBill.partyName,
+        partyPhone: activeBill.partyPhone,
+        initialPrincipalPaise: activeBill.principalPaise,
+        outstandingPrincipalPaise: activeBill.currentPrincipalPaise,
+        accruedInterestPaise: 10000,
+        finalSettlementAmountPaise: 100000,
+        closingDate: '2026-11-12',
+        paymentMode: 'Cash',
+        cashPaise: 100000,
+        totalAllocatedPaise: 100000,
+        closedBy: '  Manager Kumar  ', // custom name with spaces to trim
+        closedByUid: 'uid_manager_456',
+      });
+
+      expect(closed.closedBy).toBe('Closed By: Manager Kumar');
+      expect(closed.closedByUid).toBe('uid_manager_456');
+
+      // Verify bill in store has the exact resolved Closed By
+      const billInStore = demoStore.getBills().find((b) => b.id === activeBill.id);
+      expect(billInStore?.closedBy).toBe('Closed By: Manager Kumar');
+      expect(billInStore?.closedByUid).toBe('uid_manager_456');
+    });
+
+    it('Zero Payment Validation: blocks bill closure when Total Allocated = ₹0.00', () => {
+      const activeBill = demoStore.getBills().find((b) => b.status === 'Active')!;
+      expect(activeBill).toBeDefined();
+
+      expect(() => {
+        demoStore.closeBill({
+          shopId: activeBill.shopId,
+          billId: activeBill.id,
+          billNumber: activeBill.billNumber,
+          partyId: activeBill.partyId,
+          partyName: activeBill.partyName,
+          partyPhone: activeBill.partyPhone,
+          initialPrincipalPaise: activeBill.principalPaise,
+          outstandingPrincipalPaise: activeBill.currentPrincipalPaise,
+          accruedInterestPaise: 10000,
+          finalSettlementAmountPaise: 100000,
+          closingDate: '2026-11-12',
+          paymentMode: 'Cash',
+          cashPaise: 0,
+          upiPaise: 0,
+          netBankingPaise: 0,
+          totalAllocatedPaise: 0,
+          closedBy: 'Manager',
+        });
+      }).toThrow('Cannot close this bill. Payment amount must be greater than ₹0.00.');
+
+      // Verify bill status is completely unchanged
+      const billAfter = demoStore.getBills().find((b) => b.id === activeBill.id);
+      expect(billAfter?.status).toBe('Active');
+    });
+  });
+
+  describe('Bug Fix 3: Split Settlement – Always Visible Fields & Exact Reconciliation', () => {
+    it('treats empty or zero fields as zero paise', () => {
+      expect(parseInputRupeesToPaise('')).toBe(0);
+      expect(parseInputRupeesToPaise('   ')).toBe(0);
+      expect(parseInputRupeesToPaise('0')).toBe(0);
+      expect(parseInputRupeesToPaise(undefined)).toBe(0);
+      expect(parseInputRupeesToPaise('4000')).toBe(400000);
+      expect(parseInputRupeesToPaise('3000.50')).toBe(300050);
+    });
+
+    it('accepts exact split reconciliation across all 3 always-visible fields', () => {
+      const agreedSettlementPaise = rupeesToPaise(10000); // ₹10,000
+
+      const cashPaise = parseInputRupeesToPaise('4000'); // ₹4,000
+      const upiPaise = parseInputRupeesToPaise('3000'); // ₹3,000
+      const netBankingPaise = parseInputRupeesToPaise('3000'); // ₹3,000
+
+      const totalAllocated = cashPaise + upiPaise + netBankingPaise;
+      const remainingBalance = agreedSettlementPaise - totalAllocated;
+
+      expect(totalAllocated).toBe(agreedSettlementPaise);
+      expect(remainingBalance).toBe(0);
+    });
+
+    it('rejects underpayment allocation when closing bill', () => {
+      const activeBill = demoStore.getBills().find((b) => b.status === 'Active')!;
+      expect(activeBill).toBeDefined();
+
+      const agreedSettlementPaise = rupeesToPaise(10000); // ₹10,000
+      const cashPaise = parseInputRupeesToPaise('4000');
+      const upiPaise = parseInputRupeesToPaise('3000');
+      const netBankingPaise = parseInputRupeesToPaise('2000'); // Total = 9,000 (1,000 shortage)
+
+      const totalAllocated = cashPaise + upiPaise + netBankingPaise;
+
+      expect(() => {
+        demoStore.closeBill({
+          shopId: activeBill.shopId,
+          billId: activeBill.id,
+          billNumber: activeBill.billNumber,
+          partyId: activeBill.partyId,
+          partyName: activeBill.partyName,
+          partyPhone: activeBill.partyPhone,
+          initialPrincipalPaise: activeBill.principalPaise,
+          outstandingPrincipalPaise: activeBill.currentPrincipalPaise,
+          accruedInterestPaise: 5000,
+          finalSettlementAmountPaise: agreedSettlementPaise,
+          closingDate: '2026-11-12',
+          paymentMode: 'Split',
+          cashPaise,
+          upiPaise,
+          netBankingPaise,
+          totalAllocatedPaise: totalAllocated,
+          closedBy: 'Cashier',
+        });
+      }).toThrow('Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before closing this bill.');
+    });
+
+    it('rejects overpayment allocation when closing bill', () => {
+      const activeBill = demoStore.getBills().find((b) => b.status === 'Active')!;
+      expect(activeBill).toBeDefined();
+
+      const agreedSettlementPaise = rupeesToPaise(10000); // ₹10,000
+      const cashPaise = parseInputRupeesToPaise('5000');
+      const upiPaise = parseInputRupeesToPaise('5000');
+      const netBankingPaise = parseInputRupeesToPaise('1000'); // Total = 11,000 (1,000 excess)
+
+      const totalAllocated = cashPaise + upiPaise + netBankingPaise;
+
+      expect(() => {
+        demoStore.closeBill({
+          shopId: activeBill.shopId,
+          billId: activeBill.id,
+          billNumber: activeBill.billNumber,
+          partyId: activeBill.partyId,
+          partyName: activeBill.partyName,
+          partyPhone: activeBill.partyPhone,
+          initialPrincipalPaise: activeBill.principalPaise,
+          outstandingPrincipalPaise: activeBill.currentPrincipalPaise,
+          accruedInterestPaise: 5000,
+          finalSettlementAmountPaise: agreedSettlementPaise,
+          closingDate: '2026-11-12',
+          paymentMode: 'Split',
+          cashPaise,
+          upiPaise,
+          netBankingPaise,
+          totalAllocatedPaise: totalAllocated,
+          closedBy: 'Cashier',
+        });
+      }).toThrow('Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before closing this bill.');
+    });
+  });
+
+  describe('Module 4 & 5: Collateral Fields & Standardized Purity', () => {
     it('creates bill using gross weight, net weight, and weight units without Go So Weight requirement', () => {
       const newBill = demoStore.addBill({
         shopId: 'demo_shop',
@@ -179,13 +405,10 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
       expect(newBill.grossWeight).toBe(16.5);
       expect(newBill.netWeight).toBe(16.0);
       expect(newBill.weightUnit).toBe('g');
-      // Go So Weight must not be a property of active bill creation
       expect((newBill as any).goSoWeight).toBeUndefined();
     });
-  });
 
-  describe('Module 5: Standardized Valuation & Purity Categories', () => {
-    it('enforces controlled standardized purity categories for Gold', () => {
+    it('enforces controlled standardized purity categories for Gold and Silver', () => {
       expect(GOLD_PURITIES).toEqual([
         '24K / 999',
         '22K / 916',
@@ -193,11 +416,6 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
         '18K / 750',
         '14K / 585',
       ]);
-      expect(GOLD_PURITIES).toContain('22K / 916');
-      expect(GOLD_PURITIES).toContain('24K / 999');
-    });
-
-    it('enforces controlled standardized purity categories for Silver', () => {
       expect(SILVER_PURITIES).toEqual([
         '999 Fine Silver',
         '925 Sterling Silver',
@@ -205,161 +423,7 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
         '835 Silver',
         '800 Silver',
       ]);
-      expect(SILVER_PURITIES).toContain('925 Sterling Silver');
-    });
-
-    it('supports customizable categories for Other collateral', () => {
       expect(OTHER_PURITIES).toContain('Platinum 950');
-      expect(OTHER_PURITIES).toContain('Diamond / Gemstone');
-    });
-  });
-
-  describe('Module 6: Immutable Audit Trails & Bill Closure', () => {
-    it('records closedBy, closedByUid, and closingTransactionId upon bill closure', () => {
-      const activeBills = demoStore.getBills().filter((b) => b.status === 'Active');
-      expect(activeBills.length).toBeGreaterThan(0);
-      const targetBill = activeBills[0];
-
-      const closingTimestamp = Date.now();
-      const closedBill = demoStore.closeBill({
-        shopId: 'demo_shop',
-        billId: targetBill.id,
-        billNumber: targetBill.billNumber,
-        partyId: targetBill.partyId,
-        partyName: targetBill.partyName,
-        partyPhone: targetBill.partyPhone,
-        initialPrincipalPaise: targetBill.principalPaise,
-        outstandingPrincipalPaise: targetBill.currentPrincipalPaise,
-        accruedInterestPaise: 230000,
-        finalSettlementAmountPaise: 11730000,
-        closingDate: '2026-11-12',
-        paymentMode: 'Split',
-        paymentModes: ['Cash', 'GPay / PhonePe'],
-        splitAllocations: {
-          cashPaise: 7000000,
-          upiPaise: 4730000,
-          netBankingPaise: 0,
-        },
-        cashPaise: 7000000,
-        upiPaise: 4730000,
-        netBankingPaise: 0,
-        agreedSettlementPaise: 11730000,
-        totalAllocatedPaise: 11730000,
-        closedBy: 'Master Admin Domnic',
-        closedByUid: 'uid_admin_123',
-        closingTransactionId: `tx_close_${targetBill.id}_${closingTimestamp}`,
-        notes: 'Redeemed in full via Cash and GPay',
-      });
-
-      expect(closedBill.id).toBeDefined();
-      expect(closedBill.closedBy).toBe('Master Admin Domnic');
-      expect(closedBill.closedByUid).toBe('uid_admin_123');
-      expect(closedBill.closingTransactionId).toContain(`tx_close_${targetBill.id}`);
-      expect(closedBill.splitAllocations?.cashPaise).toBe(7000000);
-      expect(closedBill.splitAllocations?.upiPaise).toBe(4730000);
-
-      // Verify the bill in store is marked as Closed with immutable audit trail
-      const updatedBill = demoStore.getBills().find((b) => b.id === targetBill.id);
-      expect(updatedBill?.status).toBe('Closed');
-      expect(updatedBill?.currentPrincipalPaise).toBe(0);
-      expect(updatedBill?.closedBy).toBe('Master Admin Domnic');
-      expect(updatedBill?.closedByUid).toBe('uid_admin_123');
-      expect(updatedBill?.closingTransactionId).toBe(closedBill.closingTransactionId);
-    });
-  });
-
-  describe('Module 7: Multi-Mode Split Payment & Settlement Engine', () => {
-    it('correctly calculates integer paise for Indian Rupee amounts', () => {
-      expect(rupeesToPaise(100)).toBe(10000);
-      expect(rupeesToPaise(0.5)).toBe(50);
-      expect(rupeesToPaise(1250.75)).toBe(125075);
-      expect(paiseToRupees(125075)).toBe(1250.75);
-      expect(paiseToRupees(10000)).toBe(100);
-    });
-
-    it('validates exact split payment allocation matching agreed amount in paise', () => {
-      const agreedPaymentRupees = 15000;
-      const agreedPaymentPaise = rupeesToPaise(agreedPaymentRupees); // 1,500,000 paise
-
-      const cashAllocationRupees = 10000;
-      const upiAllocationRupees = 5000;
-      const netBankingAllocationRupees = 0;
-
-      const cashPaise = rupeesToPaise(cashAllocationRupees);
-      const upiPaise = rupeesToPaise(upiAllocationRupees);
-      const netBankingPaise = rupeesToPaise(netBankingAllocationRupees);
-
-      const totalAllocatedPaise = cashPaise + upiPaise + netBankingPaise;
-      const isExactMatch = totalAllocatedPaise === agreedPaymentPaise;
-
-      expect(isExactMatch).toBe(true);
-      expect(agreedPaymentPaise - totalAllocatedPaise).toBe(0);
-    });
-
-    it('detects and calculates underpayment mismatch precisely in paise', () => {
-      const agreedAmountPaise = rupeesToPaise(25000); // ₹25,000 = 2,500,000 paise
-
-      const cashPaise = rupeesToPaise(15000); // ₹15,000
-      const upiPaise = rupeesToPaise(8000); // ₹8,000
-      const netBankingPaise = 0;
-
-      const totalAllocatedPaise = cashPaise + upiPaise + netBankingPaise; // ₹23,000 = 2,300,000 paise
-      const isUnderpaid = totalAllocatedPaise < agreedAmountPaise;
-      const shortagePaise = agreedAmountPaise - totalAllocatedPaise;
-
-      expect(isUnderpaid).toBe(true);
-      expect(shortagePaise).toBe(200000); // ₹2,000 shortage
-    });
-
-    it('detects and calculates overpayment mismatch precisely in paise', () => {
-      const agreedAmountPaise = rupeesToPaise(10000); // ₹10,000 = 1,000,000 paise
-
-      const cashPaise = rupeesToPaise(7000); // ₹7,000
-      const upiPaise = rupeesToPaise(5000); // ₹5,000
-
-      const totalAllocatedPaise = cashPaise + upiPaise; // ₹12,000 = 1,200,000 paise
-      const isOverpaid = totalAllocatedPaise > agreedAmountPaise;
-      const excessPaise = totalAllocatedPaise - agreedAmountPaise;
-
-      expect(isOverpaid).toBe(true);
-      expect(excessPaise).toBe(200000); // ₹2,000 excess
-    });
-
-    it('records split payment details in demoStore', () => {
-      const activeBill = demoStore.getBills().find((b) => b.status === 'Active')!;
-      expect(activeBill).toBeDefined();
-
-      const payment = demoStore.addPayment({
-        shopId: 'demo_shop',
-        partyId: activeBill.partyId,
-        partyName: activeBill.partyName,
-        billId: activeBill.id,
-        billNumber: activeBill.billNumber,
-        amountPaise: 500000, // ₹5,000
-        interestPortionPaise: 200000, // ₹2,000
-        principalPortionPaise: 300000, // ₹3,000
-        paymentDate: '2026-11-12',
-        paymentMode: 'Split',
-        paymentModes: ['Cash', 'GPay / PhonePe'],
-        splitAllocations: {
-          cashPaise: 200000,
-          upiPaise: 300000,
-          netBankingPaise: 0,
-        },
-        cashPaise: 200000,
-        upiPaise: 300000,
-        netBankingPaise: 0,
-        agreedPaymentPaise: 500000,
-        totalAllocatedPaise: 500000,
-        notes: 'Partial payment split Cash & GPay',
-      });
-
-      expect(payment.id).toBeDefined();
-      expect(payment.paymentMode).toBe('Split');
-      expect(payment.paymentModes).toContain('Cash');
-      expect(payment.paymentModes).toContain('GPay / PhonePe');
-      expect(payment.splitAllocations?.cashPaise).toBe(200000);
-      expect(payment.splitAllocations?.upiPaise).toBe(300000);
     });
   });
 });

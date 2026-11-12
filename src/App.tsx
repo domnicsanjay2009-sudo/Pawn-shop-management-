@@ -100,6 +100,7 @@ const MainApplication: React.FC = () => {
 
   // Selected party for detail view
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
+  const [preselectedCustomerForBill, setPreselectedCustomerForBill] = useState<Party | null>(null);
 
   // Modals
   const [showAddPaymentModal, setShowAddPaymentModal] = useState(false);
@@ -164,20 +165,31 @@ const MainApplication: React.FC = () => {
   };
 
   const handleSaveBill = async (data: any) => {
+    let savedBill: Bill | null = null;
     if (isDemoMode) {
-      const b = addDemoBill(data);
-      showToast(`Pledge Bill ${b.billNumber} created (Demo Mode).`, 'success');
-      return;
+      savedBill = addDemoBill(data);
+      showToast(`Pledge Bill ${savedBill.billNumber} created (Demo Mode).`, 'success');
+    } else {
+      if (!shopProfile?.shopId) return;
+      savedBill = await createBill(shopProfile.shopId, data);
+      setBills((prev) => [savedBill!, ...prev]);
+      // update party bill count
+      setParties((prev) =>
+        prev.map((p) => (p.id === data.partyId ? { ...p, totalBills: p.totalBills + 1 } : p))
+      );
+      showToast(`Bill ${savedBill.billNumber} created successfully.`, 'success');
     }
 
-    if (!shopProfile?.shopId) return;
-    const b = await createBill(shopProfile.shopId, data);
-    setBills((prev) => [b, ...prev]);
-    // update party bill count
-    setParties((prev) =>
-      prev.map((p) => (p.id === data.partyId ? { ...p, totalBills: p.totalBills + 1 } : p))
-    );
-    showToast(`Bill ${b.billNumber} created successfully.`, 'success');
+    // Auto-navigate back to the customer's detail view to inspect their new bill
+    const associatedParty =
+      activeParties.find((p) => p.id === data.partyId) ||
+      preselectedCustomerForBill ||
+      parties.find((p) => p.id === data.partyId);
+
+    setPreselectedCustomerForBill(null);
+    if (associatedParty) {
+      setSelectedParty(associatedParty);
+    }
   };
 
   const handleSavePayment = async (data: any) => {
@@ -325,7 +337,10 @@ const MainApplication: React.FC = () => {
         currentTab={currentTab}
         onSelectTab={(tab) => {
           setCurrentTab(tab);
-          if (tab !== 'parties') setSelectedParty(null);
+          if (tab !== 'parties') {
+            setSelectedParty(null);
+            setPreselectedCustomerForBill(null);
+          }
         }}
         mobileOpen={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
@@ -351,6 +366,8 @@ const MainApplication: React.FC = () => {
                 setCurrentTab('parties');
               }}
               onOpenAddBill={() => {
+                setPreselectedCustomerForBill(null);
+                setSelectedParty(null);
                 setCurrentTab('parties');
               }}
             />
@@ -366,7 +383,10 @@ const MainApplication: React.FC = () => {
                   closingBills={activeClosingBills}
                   onClose={() => setSelectedParty(null)}
                   onOpenAddBill={(p) => {
-                    setModalParty(p);
+                    // Navigate directly to Add Pledge Bill creation with this customer preselected
+                    setPreselectedCustomerForBill(p);
+                    setSelectedParty(null);
+                    setCurrentTab('parties');
                   }}
                   onOpenPayment={(p, b) => {
                     setModalParty(p);
@@ -384,8 +404,15 @@ const MainApplication: React.FC = () => {
                   <AddPartyForm onSave={handleSaveParty} />
                   <AddBillForm
                     parties={activeParties}
+                    selectedParty={preselectedCustomerForBill}
                     settings={settings}
                     onSave={handleSaveBill}
+                    onCancel={() => {
+                      if (preselectedCustomerForBill) {
+                        setSelectedParty(preselectedCustomerForBill);
+                        setPreselectedCustomerForBill(null);
+                      }
+                    }}
                   />
                   <PartyList
                     parties={activeParties}

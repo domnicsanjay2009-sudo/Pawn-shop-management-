@@ -89,6 +89,7 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
   const [error, setError] = useState('');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const formContainerRef = useRef<HTMLDivElement>(null);
 
   // Selected party object
   const activeSelectedParty = useMemo(() => {
@@ -126,11 +127,14 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
     }
   }, [itemCategory, settings]);
 
-  // Sync party selection if passed as prop
+  // Sync party selection if passed as prop and auto-scroll into view on desktop/mobile
   useEffect(() => {
     if (selectedParty) {
       setPartyId(selectedParty.id);
       setIsExpanded(true);
+      setTimeout(() => {
+        formContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
     }
   }, [selectedParty]);
 
@@ -204,7 +208,10 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden transition-all duration-300">
+    <div
+      ref={formContainerRef}
+      className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden transition-all duration-300"
+    >
       {/* Minimized / Collapsed Bar */}
       <button
         type="button"
@@ -237,10 +244,10 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 1. Customer Selection - Interactive Searchable UX (Module 3) */}
+            {/* 1. Customer Selection - Choose Existing Customer (Module 3) */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                Linked Customer / Party *
+                Choose Existing Customer *
               </label>
 
               {activeSelectedParty ? (

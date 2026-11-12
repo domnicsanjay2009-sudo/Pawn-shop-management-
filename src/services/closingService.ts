@@ -62,8 +62,36 @@ export async function closeBill(
         throw new Error('This bill is already closed');
       }
 
+      // Formula: Total Allocated = Cash + GPay/PhonePe + Net Banking
+      const computedTotalAllocated = (input.cashPaise || 0) + (input.upiPaise || 0) + (input.netBankingPaise || 0);
+      const totalAllocated = input.totalAllocatedPaise !== undefined ? input.totalAllocatedPaise : computedTotalAllocated;
+
+      // 2.3 Strict Zero Payment Validation: Total Allocated = ₹0.00
+      if (totalAllocated <= 0) {
+        throw new Error('Cannot close this bill. Payment amount must be greater than ₹0.00.');
+      }
+
       const financialStatus = evaluateBillStatus(bill, input.closingDate);
       const finalAmount = input.finalSettlementAmountPaise ?? financialStatus.totalPayablePaise;
+
+      if (finalAmount <= 0) {
+        throw new Error('Cannot close this bill. Payment amount must be greater than ₹0.00.');
+      }
+
+      // 3.4 Strict Settlement Reconciliation: Allocation must match agreed settlement exactly
+      if (totalAllocated !== finalAmount) {
+        throw new Error('Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before closing this bill.');
+      }
+
+      // 2.2 Default Name Logic:
+      // Trim unnecessary spaces; if blank, use the customer's existing registered name
+      let resolvedClosedBy = (input.closedBy || '').trim();
+      if (!resolvedClosedBy) {
+        resolvedClosedBy = bill.partyName;
+      }
+      if (!resolvedClosedBy.toLowerCase().startsWith('closed by:')) {
+        resolvedClosedBy = `Closed By: ${resolvedClosedBy}`;
+      }
 
       const closingRecord = {
         shopId,
@@ -80,14 +108,14 @@ export async function closeBill(
         paymentMode: input.paymentMode,
         paymentModes: input.paymentModes,
         splitAllocations: input.splitAllocations,
-        cashPaise: input.cashPaise,
-        upiPaise: input.upiPaise,
-        netBankingPaise: input.netBankingPaise,
+        cashPaise: input.cashPaise ?? 0,
+        upiPaise: input.upiPaise ?? 0,
+        netBankingPaise: input.netBankingPaise ?? 0,
         agreedSettlementPaise: input.agreedSettlementPaise ?? finalAmount,
-        totalAllocatedPaise: input.totalAllocatedPaise ?? finalAmount,
+        totalAllocatedPaise: totalAllocated,
         notes: input.notes?.trim() || '',
         closedAt: Date.now(),
-        closedBy: input.closedBy || 'Authorized Staff',
+        closedBy: resolvedClosedBy,
         closedByUid: input.closedByUid || '',
         closingTransactionId: input.closingTransactionId || `tx_close_${bill.id}_${Date.now()}`,
         serverCreatedAt: serverTimestamp(),
