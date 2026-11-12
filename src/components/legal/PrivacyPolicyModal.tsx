@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldCheck, X, FileText, Lock, Database, PhoneCall, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useModalScrollLock } from '../../utils/modalScrollLock';
 
 interface PrivacyPolicyModalProps {
   isOpen: boolean;
@@ -7,11 +8,26 @@ interface PrivacyPolicyModalProps {
 }
 
 export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onClose }) => {
+  useModalScrollLock(isOpen, onClose);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-brand-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 bg-brand-950/70 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-privacy-title"
+        className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[90vh] animate-fadeIn"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="bg-gradient-to-r from-brand-950 via-brand-900 to-slate-900 text-white p-6 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3.5">
@@ -19,7 +35,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">Privacy Policy & Compliance</h2>
+              <h2 id="modal-privacy-title" className="text-xl font-bold text-white">Privacy Policy & Compliance</h2>
               <p className="text-xs text-slate-300 mt-0.5">
                 Pawn Shop Management Application • Version 1.2 • Effective Date: November 12, 2026
               </p>
@@ -29,6 +45,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
             type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+            aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
           </button>

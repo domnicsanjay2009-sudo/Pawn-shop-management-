@@ -35,6 +35,11 @@ import {
   getPendingEmailChange,
   clearPendingEmailChange,
 } from '../services/authService';
+import {
+  lockBodyScroll,
+  unlockBodyScroll,
+  isBodyScrollLocked,
+} from '../utils/modalScrollLock';
 
 describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
   beforeEach(() => {
@@ -191,8 +196,35 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
     });
   });
 
-  describe('Bug Fix 2: Bill Closure – Closed By Field & Zero Payment Validation', () => {
-    it('Scenario A: uses registered customer name when Closed By field is left blank or whitespace-only', () => {
+  describe('Modal Background Interaction Lock & Multi-Modal Reference Counting', () => {
+    it('manages body scroll lock with reference counting across stacked modals', () => {
+      // In Node environment document.body exists via happy-dom / jsdom
+      if (typeof document !== 'undefined') {
+        expect(isBodyScrollLocked()).toBe(false);
+
+        // Open Modal 1
+        lockBodyScroll();
+        expect(isBodyScrollLocked()).toBe(true);
+        expect(document.body.style.overflow).toBe('hidden');
+
+        // Open Modal 2 (nested / stacked)
+        lockBodyScroll();
+        expect(isBodyScrollLocked()).toBe(true);
+
+        // Close Modal 2
+        unlockBodyScroll();
+        expect(isBodyScrollLocked()).toBe(true); // Still locked because Modal 1 is open
+
+        // Close Modal 1
+        unlockBodyScroll();
+        expect(isBodyScrollLocked()).toBe(false); // Fully unlocked
+        expect(document.body.style.overflow).toBe('');
+      }
+    });
+  });
+
+  describe('Bug Fix 2: Bill Closure – Closed By Operator Attribution & Zero Payment Validation', () => {
+    it('Scenario A: defaults to "Closed By: Authorized User" when Closed By is blank, NEVER the customer', () => {
       const activeBill = demoStore.getBills().find((b) => b.status === 'Active')!;
       expect(activeBill).toBeDefined();
 
@@ -210,19 +242,23 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
         closingDate: '2026-11-12',
         paymentMode: 'Cash',
         cashPaise: 100000,
-        totalAllocatedPaise: 100000,
-        closedBy: '   ', // whitespace only - should resolve to customer name
+        totalPaidPaise: 100000,
+        closedBy: '   ', // blank / whitespace only - MUST NOT default to customer name!
         closedByUid: 'uid_test_123',
       });
 
-      expect(closed.closedBy).toBe(`Closed By: ${activeBill.partyName}`);
+      // Attribution must NOT be the customer's name
+      expect(closed.closedBy).not.toBe(`Closed By: ${activeBill.partyName}`);
+      expect(closed.closedBy).toBe('Closed By: Authorized User');
+      expect(closed.closedByRole).toBe('authorized_user');
+      expect(closed.finalOutstandingPaise).toBe(0);
 
       // Verify customer's registered record remains unchanged
       const party = demoStore.getParties().find((p) => p.id === activeBill.partyId);
       expect(party?.name).toBe(activeBill.partyName);
     });
 
-    it('Scenario B: uses custom entered name when Closed By field is provided', () => {
+    it('Scenario B: uses custom entered name when Closed By field is provided, trimming whitespace', () => {
       const activeBills = demoStore.getBills().filter((b) => b.status === 'Active');
       const activeBill = activeBills[0];
       expect(activeBill).toBeDefined();
@@ -241,7 +277,7 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
         closingDate: '2026-11-12',
         paymentMode: 'Cash',
         cashPaise: 100000,
-        totalAllocatedPaise: 100000,
+        totalPaidPaise: 100000,
         closedBy: '  Manager Kumar  ', // custom name with spaces to trim
         closedByUid: 'uid_manager_456',
       });
@@ -249,13 +285,42 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
       expect(closed.closedBy).toBe('Closed By: Manager Kumar');
       expect(closed.closedByUid).toBe('uid_manager_456');
 
-      // Verify bill in store has the exact resolved Closed By
+      // Verify bill in store has the exact resolved Closed By and finalOutstandingPaise: 0
       const billInStore = demoStore.getBills().find((b) => b.id === activeBill.id);
       expect(billInStore?.closedBy).toBe('Closed By: Manager Kumar');
       expect(billInStore?.closedByUid).toBe('uid_manager_456');
+      expect(billInStore?.finalOutstandingPaise).toBe(0);
     });
 
-    it('Zero Payment Validation: blocks bill closure when Total Allocated = ₹0.00', () => {
+    it('Scenario C & D: records Staff or Owner role accurately in audit trail', () => {
+      const activeBill = demoStore.getBills().find((b) => b.status === 'Active')!;
+      expect(activeBill).toBeDefined();
+
+      const closedStaff = demoStore.closeBill({
+        shopId: activeBill.shopId,
+        billId: activeBill.id,
+        billNumber: activeBill.billNumber,
+        partyId: activeBill.partyId,
+        partyName: activeBill.partyName,
+        partyPhone: activeBill.partyPhone,
+        initialPrincipalPaise: activeBill.principalPaise,
+        outstandingPrincipalPaise: activeBill.currentPrincipalPaise,
+        accruedInterestPaise: 10000,
+        finalSettlementAmountPaise: 100000,
+        closingDate: '2026-11-12',
+        paymentMode: 'Cash',
+        cashPaise: 100000,
+        totalPaidPaise: 100000,
+        closedBy: 'Closed By: Staff Ramesh',
+        closedByRole: 'staff',
+        closedByUid: 'staff_uid_01',
+      });
+
+      expect(closedStaff.closedBy).toBe('Closed By: Staff Ramesh');
+      expect(closedStaff.closedByRole).toBe('staff');
+    });
+
+    it('Zero Payment Validation: blocks bill closure when Total Paid = ₹0.00', () => {
       const activeBill = demoStore.getBills().find((b) => b.status === 'Active')!;
       expect(activeBill).toBeDefined();
 
@@ -276,10 +341,10 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
           cashPaise: 0,
           upiPaise: 0,
           netBankingPaise: 0,
-          totalAllocatedPaise: 0,
+          totalPaidPaise: 0,
           closedBy: 'Manager',
         });
-      }).toThrow('Cannot close this bill. Payment amount must be greater than ₹0.00.');
+      }).toThrow('Cannot close this bill. Please enter a valid payment amount.');
 
       // Verify bill status is completely unchanged
       const billAfter = demoStore.getBills().find((b) => b.id === activeBill.id);
@@ -340,9 +405,10 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
           upiPaise,
           netBankingPaise,
           totalAllocatedPaise: totalAllocated,
+          totalPaidPaise: totalAllocated,
           closedBy: 'Cashier',
         });
-      }).toThrow('Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before closing this bill.');
+      }).toThrow(/Payment is insufficient! Remaining outstanding: ₹1000\.00\./);
     });
 
     it('rejects overpayment allocation when closing bill', () => {
@@ -374,9 +440,10 @@ describe('Pawn Shop Management Application - Master Enhancement Suite', () => {
           upiPaise,
           netBankingPaise,
           totalAllocatedPaise: totalAllocated,
+          totalPaidPaise: totalAllocated,
           closedBy: 'Cashier',
         });
-      }).toThrow('Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before closing this bill.');
+      }).toThrow(/Overpayment detected! Total paid exceeds the outstanding balance by ₹1000\.00\./);
     });
   });
 

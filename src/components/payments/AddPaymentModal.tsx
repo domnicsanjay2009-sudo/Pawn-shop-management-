@@ -4,6 +4,7 @@ import { Party, Bill, PaymentMode } from '../../types';
 import { rupeesToPaise, allocatePayment, evaluateBillStatus } from '../../utils/calculations';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
 import { SplitPaymentSelector, SplitPaymentState, parseInputRupeesToPaise } from './SplitPaymentSelector';
+import { useModalScrollLock } from '../../utils/modalScrollLock';
 
 interface AddPaymentModalProps {
   party: Party;
@@ -20,6 +21,9 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   onClose,
   onSavePayment,
 }) => {
+  // Modal Background Lock & Keyboard Accessibility
+  useModalScrollLock(true, onClose);
+
   const activeBills = useMemo(() => {
     return allPartyBills.filter((b) => b.status === 'Active');
   }, [allPartyBills]);
@@ -146,31 +150,50 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-brand-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-brand-950 to-brand-900 text-white p-5 flex items-center justify-between">
+    <div
+      className="fixed inset-0 z-50 bg-brand-950/70 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-add-payment-title"
+        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn flex flex-col my-auto max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header (Shrink-0) */}
+        <div className="bg-gradient-to-r from-brand-950 to-brand-900 text-white p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
               <CreditCard className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Record Customer Payment</h3>
+              <h3 id="modal-add-payment-title" className="text-base font-bold text-white">Record Customer Payment</h3>
               <p className="text-xs text-slate-300">Party: {party.name}</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+            aria-label="Close dialog"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {error && (
-          <div className="m-5 mb-0 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
+          <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium shrink-0">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-6 space-y-4 flex-1 overflow-y-auto">
           {/* Bill Selection */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
@@ -302,8 +325,10 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
             />
           </div>
 
-          {/* Modal Actions */}
-          <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
+          </div>
+
+          {/* Modal Actions (Shrink-0) */}
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end space-x-3 shrink-0">
             <button
               type="button"
               onClick={onClose}

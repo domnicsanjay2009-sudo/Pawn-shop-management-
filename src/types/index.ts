@@ -97,8 +97,10 @@ export interface Bill {
   closedAt?: number;
   closedBy?: string;
   closedByUid?: string;
+  closedByRole?: 'owner' | 'staff' | 'admin' | 'authorized_user';
   closingTransactionId?: string;
   closingNotes?: string;
+  finalOutstandingPaise?: number;
   
   createdAt: number;
   updatedAt: number;
@@ -143,6 +145,8 @@ export interface ClosingBill {
   outstandingPrincipalPaise: number;
   accruedInterestPaise: number;
   finalSettlementAmountPaise: number;
+  totalPaidPaise?: number;
+  finalOutstandingPaise?: number;
   
   closingDate: string;
   paymentMode: PaymentMode;
@@ -157,6 +161,7 @@ export interface ClosingBill {
   closedAt: number;
   closedBy?: string;
   closedByUid?: string;
+  closedByRole?: 'owner' | 'staff' | 'admin' | 'authorized_user';
   closingTransactionId?: string;
 }
 

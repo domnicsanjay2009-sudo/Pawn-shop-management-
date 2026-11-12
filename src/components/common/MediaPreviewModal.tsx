@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Download, FileText } from 'lucide-react';
+import { useModalScrollLock } from '../../utils/modalScrollLock';
 
 interface MediaPreviewModalProps {
   isOpen: boolean;
@@ -18,6 +19,8 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
   fileType,
   onClose,
 }) => {
+  useModalScrollLock(isOpen && Boolean(url), onClose);
+
   if (!isOpen || !url) return null;
 
   const isPdf =
@@ -27,16 +30,23 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4"
-      onClick={onClose}
+      className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
     >
       <div
-        className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden animate-fadeIn"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-media-preview-title"
+        className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden animate-fadeIn flex flex-col my-auto max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50">
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4 bg-slate-50 shrink-0">
           <div className="min-w-0">
-            <h3 className="text-sm font-bold text-brand-950 truncate">{title}</h3>
+            <h3 id="modal-media-preview-title" className="text-sm font-bold text-brand-950 truncate">{title}</h3>
             {fileName && (
               <p className="text-xs text-slate-500 truncate mt-0.5">{fileName}</p>
             )}
@@ -61,7 +71,7 @@ export const MediaPreviewModal: React.FC<MediaPreviewModalProps> = ({
           </div>
         </div>
 
-        <div className="p-4 bg-slate-100 flex items-center justify-center max-h-[75vh] overflow-auto">
+        <div className="p-4 bg-slate-100 flex items-center justify-center flex-1 overflow-auto">
           {isPdf ? (
             <div className="w-full space-y-3">
               <iframe

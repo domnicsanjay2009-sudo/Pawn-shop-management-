@@ -31,8 +31,11 @@ export interface CloseBillInput {
   netBankingPaise?: number;
   agreedSettlementPaise?: number;
   totalAllocatedPaise?: number;
+  totalPaidPaise?: number;
+  finalOutstandingPaise?: number;
   closedBy?: string;
   closedByUid?: string;
+  closedByRole?: 'owner' | 'staff' | 'admin' | 'authorized_user';
   closingTransactionId?: string;
 }
 
@@ -62,34 +65,39 @@ export async function closeBill(
         throw new Error('This bill is already closed');
       }
 
-      // Formula: Total Allocated = Cash + GPay/PhonePe + Net Banking
-      const computedTotalAllocated = (input.cashPaise || 0) + (input.upiPaise || 0) + (input.netBankingPaise || 0);
-      const totalAllocated = input.totalAllocatedPaise !== undefined ? input.totalAllocatedPaise : computedTotalAllocated;
+      // Formula: Total Paid = Cash + GPay/PhonePe + Net Banking
+      const computedTotalPaid = (input.cashPaise || 0) + (input.upiPaise || 0) + (input.netBankingPaise || 0);
+      const totalPaid = input.totalPaidPaise !== undefined
+        ? input.totalPaidPaise
+        : (input.totalAllocatedPaise !== undefined ? input.totalAllocatedPaise : computedTotalPaid);
 
-      // 2.3 Strict Zero Payment Validation: Total Allocated = ₹0.00
-      if (totalAllocated <= 0) {
-        throw new Error('Cannot close this bill. Payment amount must be greater than ₹0.00.');
+      // Strict Zero Payment Validation: Total Paid must be greater than ₹0.00
+      if (totalPaid <= 0) {
+        throw new Error('Cannot close this bill. Please enter a valid payment amount.');
       }
 
       const financialStatus = evaluateBillStatus(bill, input.closingDate);
-      const finalAmount = input.finalSettlementAmountPaise ?? financialStatus.totalPayablePaise;
+      const expectedOutstanding = financialStatus.totalPayablePaise;
 
-      if (finalAmount <= 0) {
-        throw new Error('Cannot close this bill. Payment amount must be greater than ₹0.00.');
+      // Settlement Reconciliation
+      if (totalPaid < expectedOutstanding) {
+        const remaining = expectedOutstanding - totalPaid;
+        throw new Error(`Payment is insufficient! Remaining outstanding: ₹${(remaining / 100).toFixed(2)}. Please allocate the full settlement amount before closing.`);
       }
 
-      // 3.4 Strict Settlement Reconciliation: Allocation must match agreed settlement exactly
-      if (totalAllocated !== finalAmount) {
-        throw new Error('Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before closing this bill.');
+      if (totalPaid > expectedOutstanding) {
+        const excess = totalPaid - expectedOutstanding;
+        throw new Error(`Overpayment detected! Total paid exceeds the outstanding balance by ₹${(excess / 100).toFixed(2)}. Please adjust payment amounts.`);
       }
 
-      // 2.2 Default Name Logic:
-      // Trim unnecessary spaces; if blank, use the customer's existing registered name
+      // Accurate Audit Logging - Closed By Attribution (NEVER default to customer)
       let resolvedClosedBy = (input.closedBy || '').trim();
+      let resolvedRole: 'owner' | 'staff' | 'admin' | 'authorized_user' = input.closedByRole || 'authorized_user';
+
       if (!resolvedClosedBy) {
-        resolvedClosedBy = bill.partyName;
-      }
-      if (!resolvedClosedBy.toLowerCase().startsWith('closed by:')) {
+        resolvedClosedBy = 'Closed By: Authorized User';
+        resolvedRole = 'authorized_user';
+      } else if (!resolvedClosedBy.toLowerCase().startsWith('closed by:')) {
         resolvedClosedBy = `Closed By: ${resolvedClosedBy}`;
       }
 
@@ -103,7 +111,9 @@ export async function closeBill(
         initialPrincipalPaise: bill.principalPaise,
         outstandingPrincipalPaise: bill.currentPrincipalPaise,
         accruedInterestPaise: financialStatus.accruedInterestPaise,
-        finalSettlementAmountPaise: finalAmount,
+        finalSettlementAmountPaise: expectedOutstanding,
+        totalPaidPaise: totalPaid,
+        finalOutstandingPaise: 0,
         closingDate: input.closingDate,
         paymentMode: input.paymentMode,
         paymentModes: input.paymentModes,
@@ -111,12 +121,13 @@ export async function closeBill(
         cashPaise: input.cashPaise ?? 0,
         upiPaise: input.upiPaise ?? 0,
         netBankingPaise: input.netBankingPaise ?? 0,
-        agreedSettlementPaise: input.agreedSettlementPaise ?? finalAmount,
-        totalAllocatedPaise: totalAllocated,
+        agreedSettlementPaise: input.agreedSettlementPaise ?? expectedOutstanding,
+        totalAllocatedPaise: totalPaid,
         notes: input.notes?.trim() || '',
         closedAt: Date.now(),
         closedBy: resolvedClosedBy,
         closedByUid: input.closedByUid || '',
+        closedByRole: resolvedRole,
         closingTransactionId: input.closingTransactionId || `tx_close_${bill.id}_${Date.now()}`,
         serverCreatedAt: serverTimestamp(),
       };
@@ -128,9 +139,12 @@ export async function closeBill(
       transaction.update(billRef, {
         status: 'Closed',
         currentPrincipalPaise: 0,
+        totalPaidPaise: (bill.totalPaidPaise || 0) + totalPaid,
+        finalOutstandingPaise: 0,
         closedAt: closingRecord.closedAt,
         closedBy: closingRecord.closedBy,
         closedByUid: closingRecord.closedByUid,
+        closedByRole: resolvedRole,
         closingTransactionId: closingRecord.closingTransactionId,
         closingNotes: input.notes?.trim() || '',
         updatedAt: Date.now(),
