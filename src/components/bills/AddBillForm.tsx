@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   FileText,
   ChevronDown,
@@ -10,10 +10,46 @@ import {
   Percent,
   Clock,
   Loader2,
-  User
+  User,
+  Search,
+  CheckCircle2,
+  MapPin,
+  Phone,
+  X
 } from 'lucide-react';
-import { Party, ItemCategory, InterestDuration, WeightUnit, AppSettings } from '../../types';
+import {
+  Party,
+  ItemCategory,
+  InterestDuration,
+  WeightUnit,
+  AppSettings,
+  GoldPurity,
+  SilverPurity
+} from '../../types';
 import { rupeesToPaise } from '../../utils/calculations';
+
+export const GOLD_PURITIES: GoldPurity[] = [
+  '24K / 999',
+  '22K / 916',
+  '20K / 833',
+  '18K / 750',
+  '14K / 585',
+];
+
+export const SILVER_PURITIES: SilverPurity[] = [
+  '999 Fine Silver',
+  '925 Sterling Silver',
+  '900 Silver',
+  '835 Silver',
+  '800 Silver',
+];
+
+export const OTHER_PURITIES = [
+  'Platinum 950',
+  'Diamond / Gemstone',
+  'Brass / Bronze',
+  'Other Collateral',
+];
 
 interface AddBillFormProps {
   parties: Party[];
@@ -32,9 +68,10 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [partyId, setPartyId] = useState(selectedParty?.id || '');
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [itemCategory, setItemCategory] = useState<ItemCategory>('Gold');
   const [itemDescription, setItemDescription] = useState('');
-  const [purity, setPurity] = useState('22K / 916');
+  const [purity, setPurity] = useState<string>('22K / 916');
   const [grossWeight, setGrossWeight] = useState('');
   const [netWeight, setNetWeight] = useState('');
   const [weightUnit, setWeightUnit] = useState<WeightUnit>('g');
@@ -51,19 +88,41 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const firstInputRef = useRef<HTMLSelectElement | HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync default interest percentage whenever category changes
+  // Selected party object
+  const activeSelectedParty = useMemo(() => {
+    return parties.find((p) => p.id === partyId) || (selectedParty?.id === partyId ? selectedParty : null);
+  }, [parties, partyId, selectedParty]);
+
+  // Real-time customer search filtering (Module 3)
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearchQuery.trim().toLowerCase();
+    if (!q) return parties.slice(0, 8);
+
+    const cleanQueryDigits = q.replace(/\D/g, '');
+
+    return parties
+      .filter((p) => {
+        const nameMatch = p.name.toLowerCase().includes(q);
+        const cleanPhone = p.phone.replace(/\D/g, '');
+        const phoneMatch = cleanQueryDigits ? cleanPhone.includes(cleanQueryDigits) : false;
+        return nameMatch || phoneMatch;
+      })
+      .slice(0, 10);
+  }, [parties, customerSearchQuery]);
+
+  // Sync default interest percentage and standardized purity whenever category changes
   useEffect(() => {
     if (itemCategory === 'Gold') {
       setInterestPercentage(settings.defaultGoldPercentage || 2.0);
       setPurity('22K / 916');
     } else if (itemCategory === 'Silver') {
       setInterestPercentage(settings.defaultSilverPercentage || 3.0);
-      setPurity('92.5%');
+      setPurity('925 Sterling Silver');
     } else {
       setInterestPercentage(settings.defaultOthersPercentage || 4.0);
-      setPurity('');
+      setPurity('Other Collateral');
     }
   }, [itemCategory, settings]);
 
@@ -77,12 +136,12 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
 
   // Focus cursor in first field when expanded as required
   useEffect(() => {
-    if (isExpanded) {
+    if (isExpanded && !partyId) {
       setTimeout(() => {
-        firstInputRef.current?.focus();
+        searchInputRef.current?.focus();
       }, 150);
     }
-  }, [isExpanded]);
+  }, [isExpanded, partyId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,28 +237,122 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 1. Customer Selection */}
+            {/* 1. Customer Selection - Interactive Searchable UX (Module 3) */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
                 Linked Customer / Party *
               </label>
-              <div className="relative">
-                <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <select
-                  ref={firstInputRef as any}
-                  required
-                  value={partyId}
-                  onChange={(e) => setPartyId(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
-                >
-                  <option value="">-- Choose Existing Customer --</option>
-                  {parties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.phone})
-                    </option>
-                  ))}
-                </select>
-              </div>
+
+              {activeSelectedParty ? (
+                <div className="flex items-center justify-between p-3.5 bg-accent-50/70 border border-accent-200 rounded-xl animate-fadeIn">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    {activeSelectedParty.photoUrl ? (
+                      <img
+                        src={activeSelectedParty.photoUrl}
+                        alt={activeSelectedParty.name}
+                        className="w-10 h-10 rounded-full object-cover border border-accent-300 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-accent-600/10 text-accent-700 flex items-center justify-center font-bold shrink-0">
+                        <User className="w-5 h-5" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <p className="text-sm font-bold text-brand-950 truncate">
+                          {activeSelectedParty.name}
+                        </p>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                          Selected
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 truncate mt-0.5 flex items-center gap-2">
+                        <span className="font-mono">{activeSelectedParty.phone}</span>
+                        {activeSelectedParty.address && <span>• {activeSelectedParty.address}</span>}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPartyId('');
+                      setCustomerSearchQuery('');
+                      setTimeout(() => searchInputRef.current?.focus(), 100);
+                    }}
+                    className="ml-3 px-3 py-1.5 text-xs font-bold text-accent-700 hover:text-accent-900 bg-white border border-accent-300 rounded-lg hover:bg-accent-100 transition-colors shrink-0 cursor-pointer"
+                  >
+                    Change Customer
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      value={customerSearchQuery}
+                      onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                      placeholder="Type customer name or phone number to search..."
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+                    />
+                    {customerSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomerSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filtered Customer Matches List */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-white max-h-48 overflow-y-auto divide-y divide-slate-100 shadow-xs">
+                    {filteredCustomers.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-slate-500">
+                        No customer found matching &quot;{customerSearchQuery}&quot;. Please check the spelling or add a new party in Customer Management above.
+                      </div>
+                    ) : (
+                      filteredCustomers.map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setPartyId(p.id);
+                            setCustomerSearchQuery('');
+                          }}
+                          className="p-2.5 px-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center space-x-3 min-w-0">
+                            {p.photoUrl ? (
+                              <img
+                                src={p.photoUrl}
+                                alt={p.name}
+                                className="w-8 h-8 rounded-full object-cover shrink-0"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                                <User className="w-4 h-4" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-brand-950 truncate">{p.name}</p>
+                              <p className="text-[11px] text-slate-500 font-mono truncate">{p.phone}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="px-2.5 py-1 text-[11px] font-bold text-accent-600 bg-accent-50 rounded-lg shrink-0"
+                          >
+                            Select
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 2. Item Category & Purity */}
@@ -234,7 +387,7 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
               </div>
             </div>
 
-            {/* 3. Weight & Unit Selection */}
+            {/* 3. Weight & Standardized Controlled Purity Selection (Module 4 & 5) */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
@@ -284,15 +437,32 @@ export const AddBillForm: React.FC<AddBillFormProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                  Purity / Touch
+                  Purity Category *
                 </label>
-                <input
-                  type="text"
+                <select
                   value={purity}
                   onChange={(e) => setPurity(e.target.value)}
-                  placeholder="e.g. 916 / 22K"
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
-                />
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-brand-950 focus:outline-none focus:ring-2 focus:ring-accent-500"
+                >
+                  {itemCategory === 'Gold' &&
+                    GOLD_PURITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  {itemCategory === 'Silver' &&
+                    SILVER_PURITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  {itemCategory === 'Others' &&
+                    OTHER_PURITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                </select>
               </div>
             </div>
 

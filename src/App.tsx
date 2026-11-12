@@ -25,7 +25,6 @@ import { SubscriptionPlans } from './components/subscription/SubscriptionPlans';
 import { SubscriptionHistory } from './components/subscription/SubscriptionHistory';
 import { ChatContainer } from './components/chat/ChatContainer';
 import { AppSettings } from './components/settings/AppSettings';
-import { IntroductionPage } from './components/introduction/IntroductionPage';
 
 import {
   Party,
@@ -218,7 +217,24 @@ const MainApplication: React.FC = () => {
 
   const handleCloseBill = async (data: any) => {
     if (isDemoMode) {
-      closeDemoBill(data);
+      const closingBill = closeDemoBill(data);
+      setClosingBills((prev) => [closingBill, ...prev]);
+      setBills((prev) =>
+        prev.map((b) =>
+          b.id === data.billId
+            ? {
+                ...b,
+                status: 'Closed',
+                currentPrincipalPaise: 0,
+                closedAt: closingBill.closedAt,
+                closedBy: closingBill.closedBy || data.closedBy,
+                closedByUid: closingBill.closedByUid || data.closedByUid,
+                closingTransactionId: closingBill.closingTransactionId || data.closingTransactionId,
+                closingNotes: data.notes,
+              }
+            : b
+        )
+      );
       showToast('Bill settled and closed (Demo Mode).', 'success');
       return;
     }
@@ -230,7 +246,16 @@ const MainApplication: React.FC = () => {
       setBills((prev) =>
         prev.map((b) =>
           b.id === data.billId
-            ? { ...b, status: 'Closed', currentPrincipalPaise: 0, closedAt: Date.now() }
+            ? {
+                ...b,
+                status: 'Closed',
+                currentPrincipalPaise: 0,
+                closedAt: res.closingBill?.closedAt || Date.now(),
+                closedBy: res.closingBill?.closedBy || data.closedBy,
+                closedByUid: res.closingBill?.closedByUid || data.closedByUid,
+                closingTransactionId: res.closingBill?.closingTransactionId || data.closingTransactionId,
+                closingNotes: data.notes,
+              }
             : b
         )
       );
@@ -284,16 +309,6 @@ const MainApplication: React.FC = () => {
     return <AppLockScreen />;
   }
 
-  // Introduction Page Full View (when accessed via App Settings)
-  if (currentTab === 'introduction') {
-    return (
-      <IntroductionPage
-        onBackToApp={() => setCurrentTab('settings')}
-        isInitialOnboarding={false}
-      />
-    );
-  }
-
   const titles: Record<NavigationTab, string> = {
     home: 'Shop Dashboard',
     parties: 'Customers & Parties',
@@ -301,7 +316,6 @@ const MainApplication: React.FC = () => {
     'subscription-history': 'Subscription History',
     chat: 'Customer Care & AI Chat',
     settings: 'App Settings',
-    introduction: 'Introduction Guide',
   };
 
   return (
@@ -392,7 +406,6 @@ const MainApplication: React.FC = () => {
             <AppSettings
               settings={settings}
               onUpdateSettings={setSettings}
-              onOpenIntroduction={() => setCurrentTab('introduction')}
             />
           )}
         </main>

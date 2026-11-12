@@ -249,6 +249,9 @@ class DemoStore {
       bill.status = 'Closed';
       bill.currentPrincipalPaise = 0;
       bill.closedAt = Date.now();
+      bill.closedBy = closing.closedBy;
+      bill.closedByUid = closing.closedByUid;
+      bill.closingTransactionId = closing.closingTransactionId;
       bill.closingNotes = closing.notes;
       bill.updatedAt = Date.now();
     }

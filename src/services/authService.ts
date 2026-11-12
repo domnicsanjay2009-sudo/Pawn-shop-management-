@@ -6,6 +6,10 @@ import {
   signOut,
   reload,
   applyActionCode,
+  verifyBeforeUpdateEmail,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  fetchSignInMethodsForEmail,
   ActionCodeSettings,
   User
 } from 'firebase/auth';
@@ -28,6 +32,7 @@ import { ShopProfile, AppSettings } from '../types';
 const SESSION_KEY = 'psm_auth_session_timestamp';
 const SESSION_UID_KEY = 'psm_auth_session_uid';
 const PENDING_VERIFICATION_UID_KEY = 'psm_pending_verification_uid';
+const PENDING_EMAIL_CHANGE_KEY = 'psm_pending_email_change';
 const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const AUTH_REQUEST_TIMEOUT_MS = 15000;
 
@@ -113,7 +118,11 @@ export function formatAuthError(error: any): string {
     case 'auth/user-token-expired':
       return 'Your verification session has expired. Please enter your credentials to log in or resend the verification email.';
     case 'auth/operation-not-allowed':
-      return 'Email/Password sign-up is currently disabled in Firebase Authentication settings.';
+      return 'Email/Password sign-up or email change is currently disabled in Firebase Authentication settings.';
+    case 'auth/requires-recent-login':
+      return 'Please verify your current password before making sensitive account changes.';
+    case 'auth/credential-already-in-use':
+      return 'This email address is already registered to another account.';
     case 'auth/timeout':
       return error?.message || 'The authentication request timed out. Please check your connection and try again.';
     default:
@@ -662,4 +671,151 @@ export async function updateShopProfile(
     throw new Error('Updated shop profile could not be reloaded.');
   }
   return refreshed.data() as ShopProfile;
+}
+
+export interface PendingEmailChangeInfo {
+  newEmail: string;
+  requestedAt: number;
+}
+
+export function getPendingEmailChange(): PendingEmailChangeInfo | null {
+  try {
+    const raw = localStorage.getItem(PENDING_EMAIL_CHANGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingEmailChange(): void {
+  localStorage.removeItem(PENDING_EMAIL_CHANGE_KEY);
+}
+
+/**
+ * Initiates Firebase Authentication's secure email change verification workflow.
+ * Does NOT update registered account or Firestore records prematurely.
+ */
+export async function initiateEmailChange(
+  newEmail: string,
+  currentPassword?: string
+): Promise<{ success: boolean; error?: string; requiresPassword?: boolean }> {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    return { success: false, error: 'You must be logged in to change your registered email.' };
+  }
+
+  const cleanNewEmail = newEmail.trim().toLowerCase();
+  const currentEmail = user.email.trim().toLowerCase();
+
+  if (cleanNewEmail === currentEmail) {
+    return { success: false, error: 'New email cannot be the same as your currently registered email.' };
+  }
+
+  try {
+    await authPersistenceReady;
+
+    // Optional or required re-authentication
+    if (currentPassword) {
+      const cred = EmailAuthProvider.credential(user.email, currentPassword);
+      await withTimeout(
+        reauthenticateWithCredential(user, cred),
+        AUTH_REQUEST_TIMEOUT_MS,
+        'Re-authentication timed out. Please try again.'
+      );
+    }
+
+    // Initiate Firebase Auth email verification to the new email address
+    await withTimeout(
+      verifyBeforeUpdateEmail(user, cleanNewEmail),
+      AUTH_REQUEST_TIMEOUT_MS,
+      'Email change verification request timed out. Please try again.'
+    );
+
+    // Save pending change metadata locally only after Firebase confirms request initiation
+    localStorage.setItem(
+      PENDING_EMAIL_CHANGE_KEY,
+      JSON.stringify({ newEmail: cleanNewEmail, requestedAt: Date.now() })
+    );
+
+    return { success: true };
+  } catch (err: any) {
+    const code = err?.code || '';
+    if (code === 'auth/requires-recent-login' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+      return {
+        success: false,
+        requiresPassword: true,
+        error: code === 'auth/requires-recent-login'
+          ? 'For security, please enter your current account password to authorize this email change.'
+          : 'Incorrect current password. Please verify your password and try again.'
+      };
+    }
+    return { success: false, error: formatAuthError(err) };
+  }
+}
+
+/**
+ * Checks whether Firebase Authentication has verified the new email,
+ * and if so, migrates the associated cloud references atomically.
+ */
+export async function syncVerifiedEmailChange(
+  user?: User | null,
+  shopId?: string
+): Promise<{ changed: boolean; newEmail?: string; error?: string; pendingEmail?: string }> {
+  const targetUser = user || auth.currentUser;
+  if (!targetUser) {
+    return { changed: false, error: 'User is not logged in.' };
+  }
+
+  const pending = getPendingEmailChange();
+
+  try {
+    await withTimeout(
+      reload(targetUser),
+      AUTH_REQUEST_TIMEOUT_MS,
+      'Could not verify email status from Firebase. Please check your connection.'
+    );
+
+    const activeAuthEmail = (targetUser.email || '').trim().toLowerCase();
+
+    // Check if the auth user's email has transitioned to the verified new email
+    if (pending && activeAuthEmail === pending.newEmail.toLowerCase()) {
+      const resolvedShopId = shopId || `shop_${targetUser.uid}`;
+
+      // Update Firestore references safely
+      await Promise.all([
+        updateDoc(doc(db, 'shops', resolvedShopId), {
+          email: activeAuthEmail,
+          updatedAt: Date.now(),
+        }).catch((e) => console.warn('Could not update shop email reference:', e)),
+        setDoc(
+          doc(db, 'users', targetUser.uid),
+          {
+            email: activeAuthEmail,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        ).catch((e) => console.warn('Could not update user email reference:', e)),
+        updateDoc(doc(db, 'support_conversations', resolvedShopId), {
+          ownerEmail: activeAuthEmail,
+          lastUpdated: Date.now(),
+        }).catch(() => {
+          // Non-fatal if support conversation doesn't exist yet
+        }),
+      ]);
+
+      clearPendingEmailChange();
+      return { changed: true, newEmail: activeAuthEmail };
+    }
+
+    return {
+      changed: false,
+      pendingEmail: pending?.newEmail,
+      error: pending
+        ? 'The verification link sent to your new email has not been confirmed yet. Please check your inbox and click the link.'
+        : undefined,
+    };
+  } catch (err: any) {
+    return { changed: false, error: formatAuthError(err) };
+  }
 }

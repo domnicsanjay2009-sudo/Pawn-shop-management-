@@ -8,7 +8,17 @@ export type PlanType = 'Yearly' | 'Yearly Premium' | 'Complimentary Premium' | '
 export type SubscriptionStatus = 'Approved' | 'Pending' | 'Failed' | 'Expired' | 'Cancelled' | 'Revoked';
 export type EntitlementSource = 'RAZORPAY' | 'ADMIN_GRANTED' | 'COMPLIMENTARY' | 'SYSTEM';
 export type PaymentStatus = 'PAID' | 'UNPAID' | 'COMPLIMENTARY' | 'REFUNDED' | 'FAILED';
-export type PaymentMode = 'Cash' | 'UPI' | 'Bank Transfer' | 'Card' | 'Cheque';
+export type PaymentMode = 'Cash' | 'UPI' | 'Bank Transfer' | 'Card' | 'Cheque' | 'Split';
+
+export type GoldPurity = '24K / 999' | '22K / 916' | '20K / 833' | '18K / 750' | '14K / 585';
+export type SilverPurity = '999 Fine Silver' | '925 Sterling Silver' | '900 Silver' | '835 Silver' | '800 Silver';
+export type SplitModeKey = 'cash' | 'upi' | 'netBanking';
+
+export interface PaymentModeAllocation {
+  cashPaise: number;
+  upiPaise: number;
+  netBankingPaise: number;
+}
 
 export interface ShopProfile {
   shopId: string;
@@ -85,6 +95,9 @@ export interface Bill {
   totalInterestPaidPaise: number;
   lastPaymentDate?: string;
   closedAt?: number;
+  closedBy?: string;
+  closedByUid?: string;
+  closingTransactionId?: string;
   closingNotes?: string;
   
   createdAt: number;
@@ -103,6 +116,15 @@ export interface Payment {
   principalPortionPaise: number; // portion reducing principal
   paymentDate: string; // YYYY-MM-DD
   paymentMode: PaymentMode;
+  paymentModes?: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[];
+  splitAllocations?: PaymentModeAllocation;
+  cashPaise?: number;
+  upiPaise?: number;
+  netBankingPaise?: number;
+  agreedPaymentPaise?: number;
+  totalAllocatedPaise?: number;
+  transactionId?: string;
+  recordedByUid?: string;
   notes?: string;
   createdAt: number;
 }
@@ -124,8 +146,18 @@ export interface ClosingBill {
   
   closingDate: string;
   paymentMode: PaymentMode;
+  paymentModes?: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[];
+  splitAllocations?: PaymentModeAllocation;
+  cashPaise?: number;
+  upiPaise?: number;
+  netBankingPaise?: number;
+  agreedSettlementPaise?: number;
+  totalAllocatedPaise?: number;
   notes?: string;
   closedAt: number;
+  closedBy?: string;
+  closedByUid?: string;
+  closingTransactionId?: string;
 }
 
 export interface Subscription {

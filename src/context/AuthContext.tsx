@@ -13,6 +13,11 @@ import {
   hasValidUserSession,
   isPendingVerificationUid,
   isAuthOperationInProgress,
+  initiateEmailChange as apiInitiateEmailChange,
+  syncVerifiedEmailChange as apiSyncVerifiedEmailChange,
+  getPendingEmailChange,
+  clearPendingEmailChange,
+  PendingEmailChangeInfo,
   RegisterResult,
   VerificationCheckResult,
 } from '../services/authService';
@@ -44,6 +49,10 @@ interface AuthContextType {
   checkVerificationStatus: (user?: User | null) => Promise<VerificationCheckResult>;
   openVerificationScreenForUser: (user: User, banner?: AuthBannerMessage) => void;
   cancelPendingVerification: () => Promise<void>;
+  pendingEmailChange: PendingEmailChangeInfo | null;
+  initiateEmailChange: (newEmail: string, currentPassword?: string) => Promise<{ success: boolean; error?: string; requiresPassword?: boolean }>;
+  checkEmailChangeStatus: () => Promise<{ changed: boolean; newEmail?: string; error?: string }>;
+  cancelEmailChange: () => void;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<ShopProfile | null>;
 }
@@ -60,12 +69,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isSessionValid, setIsSessionValid] = useState(false);
   const [authBanner, setAuthBanner] = useState<AuthBannerMessage | null>(null);
   const [shouldShowLogin, setShouldShowLogin] = useState(false);
+  const [pendingEmailChange, setPendingEmailChange] = useState<PendingEmailChangeInfo | null>(() => getPendingEmailChange());
 
   const activeSessionUidRef = useRef<string | null>(null);
   const verificationRedirectRef = useRef<boolean>(false);
 
   const consumeShouldShowLogin = useCallback(() => setShouldShowLogin(false), []);
   const clearAuthBanner = useCallback(() => setAuthBanner(null), []);
+
+  const initiateEmailChange = async (newEmail: string, currentPassword?: string) => {
+    const res = await apiInitiateEmailChange(newEmail, currentPassword);
+    if (res.success) {
+      setPendingEmailChange(getPendingEmailChange());
+    }
+    return res;
+  };
+
+  const cancelEmailChange = () => {
+    clearPendingEmailChange();
+    setPendingEmailChange(null);
+  };
+
+  const checkEmailChangeStatus = async (): Promise<{ changed: boolean; newEmail?: string; error?: string }> => {
+    const targetUser = currentUser || auth.currentUser;
+    if (!targetUser) return { changed: false, error: 'User is not logged in.' };
+
+    const res = await apiSyncVerifiedEmailChange(targetUser, shopProfile?.shopId);
+    if (res.changed) {
+      setPendingEmailChange(null);
+      if (shopProfile && res.newEmail) {
+        setShopProfile((prev) => prev ? { ...prev, email: res.newEmail! } : null);
+      }
+    } else {
+      setPendingEmailChange(getPendingEmailChange());
+    }
+    return res;
+  };
+
+  // Check email change verification whenever user returns to browser tab
+  useEffect(() => {
+    const onWindowFocus = () => {
+      if (currentUser && getPendingEmailChange()) {
+        checkEmailChangeStatus().catch(() => {});
+      }
+    };
+    window.addEventListener('focus', onWindowFocus);
+    return () => window.removeEventListener('focus', onWindowFocus);
+  }, [currentUser, shopProfile?.shopId]);
 
   const openVerificationScreenForUser = useCallback((user: User, banner?: AuthBannerMessage) => {
     setCurrentUser(null);
@@ -478,6 +528,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         checkVerificationStatus,
         openVerificationScreenForUser,
         cancelPendingVerification,
+        pendingEmailChange,
+        initiateEmailChange,
+        checkEmailChangeStatus,
+        cancelEmailChange,
         logout,
         refreshProfile,
       }}

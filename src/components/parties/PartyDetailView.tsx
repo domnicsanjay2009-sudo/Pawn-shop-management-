@@ -305,84 +305,127 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
             if (item.type === 'bill') {
               const bill = item.data as Bill;
               const finStatus = evaluateBillStatus(bill);
+              const isClosed = bill.status === 'Closed';
+
               return (
                 <div
                   key={item.id}
-                  className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-accent-300 transition-all"
+                  className={`relative overflow-hidden bg-white p-4 rounded-xl border shadow-xs transition-all ${
+                    isClosed
+                      ? 'border-slate-200 bg-slate-50/70'
+                      : 'border-slate-200 hover:border-accent-300'
+                  }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-3">
-                      <div className="w-9 h-9 rounded-lg bg-blue-50 text-accent-600 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                        <FileText className="w-4 h-4" />
+                  {/* Module 6: Semi-transparent CLOSED watermark overlay */}
+                  {isClosed && (
+                    <div className="absolute inset-0 pointer-events-none select-none flex items-center justify-center z-0">
+                      <div className="transform -rotate-12 border-4 border-dashed border-rose-600/20 px-8 py-2 rounded-2xl">
+                        <span className="text-rose-600/15 text-5xl sm:text-6xl font-black tracking-widest uppercase">
+                          CLOSED
+                        </span>
                       </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="font-bold text-brand-950 font-mono text-sm">
-                            {bill.billNumber}
-                          </span>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              bill.status === 'Active'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-slate-100 text-slate-600 border border-slate-200'
-                            }`}
-                          >
-                            {bill.status}
-                          </span>
-                          <span className="text-xs bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md font-semibold">
-                            {bill.itemCategory}
-                          </span>
-                        </div>
-                        <p className="text-xs font-medium text-slate-700 mt-1">
-                          {bill.itemDescription}
-                        </p>
-                        <div className="flex items-center space-x-4 text-xs text-slate-500 mt-1.5">
-                          <span>
-                            Gross: {bill.grossWeight} {bill.weightUnit} | Net: {bill.netWeight}{' '}
-                            {bill.weightUnit}
-                          </span>
-                          <span>•</span>
-                          <span>Date: {formatDate(bill.billDate)}</span>
-                          <span>•</span>
-                          <span>
-                            Rate: {bill.interestPercentage}% / {bill.interestDuration}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0 pl-3">
-                      <p className="text-xs text-slate-400 font-semibold uppercase">Principal</p>
-                      <p className="text-sm font-bold text-brand-950">
-                        {formatCurrencyPaise(bill.principalPaise)}
-                      </p>
-                      {bill.status === 'Active' && (
-                        <div className="mt-1">
-                          <span className="text-[11px] font-semibold text-accent-600">
-                            + {formatCurrencyPaise(finStatus.accruedInterestPaise)} interest
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions for Active Bill */}
-                  {bill.status === 'Active' && (
-                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
-                      <button
-                        onClick={() => onOpenPayment(party, bill)}
-                        className="px-3 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                      >
-                        Add Payment
-                      </button>
-                      <button
-                        onClick={() => onOpenCloseBill(party, bill)}
-                        className="px-3 py-1 bg-slate-100 hover:bg-brand-900 hover:text-white text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                      >
-                        Close Bill
-                      </button>
                     </div>
                   )}
+
+                  <div className="relative z-10">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start space-x-3">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 ${
+                          isClosed ? 'bg-slate-200 text-slate-600' : 'bg-blue-50 text-accent-600'
+                        }`}>
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-bold text-brand-950 font-mono text-sm">
+                              {bill.billNumber}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                !isClosed
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}
+                            >
+                              {bill.status}
+                            </span>
+                            <span className="text-xs bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md font-semibold">
+                              {bill.itemCategory}
+                            </span>
+                            {bill.purity && (
+                              <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-semibold">
+                                {bill.purity}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-medium text-slate-700 mt-1">
+                            {bill.itemDescription}
+                          </p>
+                          <div className="flex items-center space-x-4 text-xs text-slate-500 mt-1.5">
+                            <span>
+                              Gross: {bill.grossWeight} {bill.weightUnit} | Net: {bill.netWeight}{' '}
+                              {bill.weightUnit}
+                            </span>
+                            <span>•</span>
+                            <span>Date: {formatDate(bill.billDate)}</span>
+                            <span>•</span>
+                            <span>
+                              Rate: {bill.interestPercentage}% / {bill.interestDuration}
+                            </span>
+                          </div>
+
+                          {/* Audit trail metadata on closed bill */}
+                          {isClosed && (
+                            <div className="mt-2 pt-2 border-t border-slate-200/70 text-[11px] text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <span className="font-semibold text-slate-700">
+                                Closed By: <span className="text-brand-950 font-bold">{bill.closedBy || 'Authorized Staff'}</span>
+                              </span>
+                              {bill.closedAt && (
+                                <span>Closed On: {formatDateTime(bill.closedAt)}</span>
+                              )}
+                              {bill.closingTransactionId && (
+                                <span className="font-mono text-[10px] text-slate-400">
+                                  Ref: {bill.closingTransactionId}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0 pl-3">
+                        <p className="text-xs text-slate-400 font-semibold uppercase">Principal</p>
+                        <p className="text-sm font-bold text-brand-950">
+                          {formatCurrencyPaise(bill.principalPaise)}
+                        </p>
+                        {!isClosed && (
+                          <div className="mt-1">
+                            <span className="text-[11px] font-semibold text-accent-600">
+                              + {formatCurrencyPaise(finStatus.accruedInterestPaise)} interest
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions for Active Bill */}
+                    {!isClosed && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => onOpenPayment(party, bill)}
+                          className="px-3 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                        >
+                          Add Payment
+                        </button>
+                        <button
+                          onClick={() => onOpenCloseBill(party, bill)}
+                          className="px-3 py-1 bg-slate-100 hover:bg-brand-900 hover:text-white text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                        >
+                          Close Bill
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             } else if (item.type === 'payment') {
@@ -409,6 +452,27 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
                         <span>Date: {formatDate(payment.paymentDate)}</span>
                         {payment.notes && <span className="ml-2 italic text-slate-400">"{payment.notes}"</span>}
                       </div>
+
+                      {/* Multi-Mode Split Breakdown */}
+                      {payment.splitAllocations && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {payment.splitAllocations.cashPaise > 0 && (
+                            <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-mono font-medium">
+                              Cash: {formatCurrencyPaise(payment.splitAllocations.cashPaise)}
+                            </span>
+                          )}
+                          {payment.splitAllocations.upiPaise > 0 && (
+                            <span className="text-[10px] bg-sky-50 text-sky-800 border border-sky-200 px-2 py-0.5 rounded-md font-mono font-medium">
+                              GPay/UPI: {formatCurrencyPaise(payment.splitAllocations.upiPaise)}
+                            </span>
+                          )}
+                          {payment.splitAllocations.netBankingPaise > 0 && (
+                            <span className="text-[10px] bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-md font-mono font-medium">
+                              Net Banking: {formatCurrencyPaise(payment.splitAllocations.netBankingPaise)}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -441,10 +505,46 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
                           Settled
                         </span>
+                        <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-medium">
+                          {closing.paymentMode}
+                        </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Closing Date: {formatDate(closing.closingDate)} via {closing.paymentMode}
+                        Closing Date: {formatDate(closing.closingDate)}
                       </p>
+
+                      {/* Audit Details */}
+                      <div className="mt-1 text-[11px] text-slate-600 flex flex-wrap items-center gap-x-2">
+                        <span className="font-semibold text-slate-800">
+                          Closed By: <span className="text-brand-950 font-bold">{closing.closedBy || 'Authorized Staff'}</span>
+                        </span>
+                        {closing.closingTransactionId && (
+                          <span className="font-mono text-[10px] text-slate-400">
+                            Ref: {closing.closingTransactionId}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Multi-Mode Split Breakdown */}
+                      {closing.splitAllocations && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {closing.splitAllocations.cashPaise > 0 && (
+                            <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-mono font-medium">
+                              Cash: {formatCurrencyPaise(closing.splitAllocations.cashPaise)}
+                            </span>
+                          )}
+                          {closing.splitAllocations.upiPaise > 0 && (
+                            <span className="text-[10px] bg-sky-50 text-sky-800 border border-sky-200 px-2 py-0.5 rounded-md font-mono font-medium">
+                              GPay/UPI: {formatCurrencyPaise(closing.splitAllocations.upiPaise)}
+                            </span>
+                          )}
+                          {closing.splitAllocations.netBankingPaise > 0 && (
+                            <span className="text-[10px] bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-md font-mono font-medium">
+                              Net Banking: {formatCurrencyPaise(closing.splitAllocations.netBankingPaise)}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 

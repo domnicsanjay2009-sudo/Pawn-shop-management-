@@ -11,7 +11,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Payment, PaymentMode, Bill } from '../types';
+import { Payment, PaymentMode, Bill, PaymentModeAllocation } from '../types';
 import { allocatePayment } from '../utils/calculations';
 
 const PAYMENTS_COLLECTION = 'payments';
@@ -26,6 +26,14 @@ export interface RecordPaymentInput {
   paymentMode: PaymentMode;
   notes?: string;
   idempotencyKey?: string;
+  paymentModes?: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[];
+  splitAllocations?: PaymentModeAllocation;
+  cashPaise?: number;
+  upiPaise?: number;
+  netBankingPaise?: number;
+  agreedPaymentPaise?: number;
+  totalAllocatedPaise?: number;
+  recordedByUid?: string;
 }
 
 export async function recordPayment(
@@ -64,6 +72,15 @@ export async function recordPayment(
         principalPortionPaise: allocation.principalPortionPaise,
         paymentDate: input.paymentDate,
         paymentMode: input.paymentMode,
+        paymentModes: input.paymentModes,
+        splitAllocations: input.splitAllocations,
+        cashPaise: input.cashPaise,
+        upiPaise: input.upiPaise,
+        netBankingPaise: input.netBankingPaise,
+        agreedPaymentPaise: input.agreedPaymentPaise ?? input.amountPaise,
+        totalAllocatedPaise: input.totalAllocatedPaise ?? input.amountPaise,
+        transactionId: input.idempotencyKey,
+        recordedByUid: input.recordedByUid,
         notes: input.notes?.trim() || '',
         createdAt: Date.now(),
         serverCreatedAt: serverTimestamp(),

@@ -11,7 +11,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { ClosingBill, PaymentMode, Bill } from '../types';
+import { ClosingBill, PaymentMode, Bill, PaymentModeAllocation } from '../types';
 import { evaluateBillStatus } from '../utils/calculations';
 
 const CLOSING_COLLECTION = 'closing_bills';
@@ -24,6 +24,16 @@ export interface CloseBillInput {
   paymentMode: PaymentMode;
   notes?: string;
   finalSettlementAmountPaise?: number; // optional override if agreed with customer
+  paymentModes?: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[];
+  splitAllocations?: PaymentModeAllocation;
+  cashPaise?: number;
+  upiPaise?: number;
+  netBankingPaise?: number;
+  agreedSettlementPaise?: number;
+  totalAllocatedPaise?: number;
+  closedBy?: string;
+  closedByUid?: string;
+  closingTransactionId?: string;
 }
 
 export async function closeBill(
@@ -68,19 +78,32 @@ export async function closeBill(
         finalSettlementAmountPaise: finalAmount,
         closingDate: input.closingDate,
         paymentMode: input.paymentMode,
+        paymentModes: input.paymentModes,
+        splitAllocations: input.splitAllocations,
+        cashPaise: input.cashPaise,
+        upiPaise: input.upiPaise,
+        netBankingPaise: input.netBankingPaise,
+        agreedSettlementPaise: input.agreedSettlementPaise ?? finalAmount,
+        totalAllocatedPaise: input.totalAllocatedPaise ?? finalAmount,
         notes: input.notes?.trim() || '',
         closedAt: Date.now(),
+        closedBy: input.closedBy || 'Authorized Staff',
+        closedByUid: input.closedByUid || '',
+        closingTransactionId: input.closingTransactionId || `tx_close_${bill.id}_${Date.now()}`,
         serverCreatedAt: serverTimestamp(),
       };
 
       const closingRef = doc(collection(db, CLOSING_COLLECTION));
       transaction.set(closingRef, closingRecord);
 
-      // Update Bill to Closed
+      // Update Bill to Closed with immutable closing audit trail
       transaction.update(billRef, {
         status: 'Closed',
         currentPrincipalPaise: 0,
-        closedAt: Date.now(),
+        closedAt: closingRecord.closedAt,
+        closedBy: closingRecord.closedBy,
+        closedByUid: closingRecord.closedByUid,
+        closingTransactionId: closingRecord.closingTransactionId,
         closingNotes: input.notes?.trim() || '',
         updatedAt: Date.now(),
       });

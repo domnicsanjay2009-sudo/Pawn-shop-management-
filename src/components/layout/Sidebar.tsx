@@ -17,8 +17,7 @@ export type NavigationTab =
   | 'subscription'
   | 'subscription-history'
   | 'chat'
-  | 'settings'
-  | 'introduction';
+  | 'settings';
 
 interface SidebarProps {
   currentTab: NavigationTab;

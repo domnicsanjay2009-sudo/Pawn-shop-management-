@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { X, CheckCircle, Calendar, IndianRupee, Loader2, AlertTriangle } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { X, CheckCircle, Calendar, IndianRupee, Loader2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { Party, Bill, PaymentMode } from '../../types';
 import { evaluateBillStatus, rupeesToPaise } from '../../utils/calculations';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
+import { useAuth } from '../../context/AuthContext';
+import { SplitPaymentSelector, SplitPaymentState } from '../payments/SplitPaymentSelector';
 
 interface CloseBillModalProps {
   party: Party;
@@ -17,12 +19,13 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
   onClose,
   onConfirmClose,
 }) => {
+  const { currentUser, shopProfile } = useAuth();
   const [closingDate, setClosingDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>('Cash');
   const [customSettlementRupees, setCustomSettlementRupees] = useState<string>('');
   const [notes, setNotes] = useState('Pawn pledge redeemed in full, items returned to customer');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const submittingRef = useRef(false);
 
   // Calculate exact financial reconciliation to closing date
   const status = useMemo(() => {
@@ -34,8 +37,47 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
     ? rupeesToPaise(customSettlementRupees)
     : defaultTotalPaise;
 
+  // Multi-Mode Split Payment Allocation State (Module 7)
+  const [splitState, setSplitState] = useState<SplitPaymentState>({
+    cashSelected: true,
+    upiSelected: false,
+    netBankingSelected: false,
+    cashRupees: (defaultTotalPaise / 100).toString(),
+    upiRupees: '',
+    netBankingRupees: '',
+  });
+
+  // Keep single selected mode synchronized with agreed settlement amount
+  useEffect(() => {
+    const activeCount =
+      (splitState.cashSelected ? 1 : 0) +
+      (splitState.upiSelected ? 1 : 0) +
+      (splitState.netBankingSelected ? 1 : 0);
+
+    if (activeCount === 1) {
+      const amountStr = (settlementPaise / 100).toString();
+      if (splitState.cashSelected) {
+        setSplitState((prev) => ({ ...prev, cashRupees: amountStr }));
+      } else if (splitState.upiSelected) {
+        setSplitState((prev) => ({ ...prev, upiRupees: amountStr }));
+      } else if (splitState.netBankingSelected) {
+        setSplitState((prev) => ({ ...prev, netBankingRupees: amountStr }));
+      }
+    }
+  }, [settlementPaise, splitState.cashSelected, splitState.upiSelected, splitState.netBankingSelected]);
+
+  const cashPaise = splitState.cashSelected ? rupeesToPaise(splitState.cashRupees) : 0;
+  const upiPaise = splitState.upiSelected ? rupeesToPaise(splitState.upiRupees) : 0;
+  const netBankingPaise = splitState.netBankingSelected ? rupeesToPaise(splitState.netBankingRupees) : 0;
+  const totalAllocatedPaise = cashPaise + upiPaise + netBankingPaise;
+  const isAllocationExact = totalAllocatedPaise === settlementPaise && settlementPaise > 0;
+
+  const closedByName = shopProfile?.ownerName || currentUser?.displayName || 'Shop Owner';
+  const closedByUid = currentUser?.uid || '';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || loading) return;
     setError('');
 
     if (bill.status === 'Closed') {
@@ -48,13 +90,60 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
       return;
     }
 
+    if (!splitState.cashSelected && !splitState.upiSelected && !splitState.netBankingSelected) {
+      setError('Please select at least one settlement payment mode.');
+      return;
+    }
+
+    if (totalAllocatedPaise < settlementPaise) {
+      const diff = settlementPaise - totalAllocatedPaise;
+      setError(`Reconciliation failed: Underpayment by ${formatCurrencyPaise(diff)}. Split allocations must match agreed settlement exactly.`);
+      return;
+    }
+
+    if (totalAllocatedPaise > settlementPaise) {
+      const diff = totalAllocatedPaise - settlementPaise;
+      setError(`Reconciliation failed: Overpayment by ${formatCurrencyPaise(diff)}. Split allocations must match agreed settlement exactly.`);
+      return;
+    }
+
+    const activeModes: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[] = [];
+    if (splitState.cashSelected && cashPaise > 0) activeModes.push('Cash');
+    if (splitState.upiSelected && upiPaise > 0) activeModes.push('GPay / PhonePe');
+    if (splitState.netBankingSelected && netBankingPaise > 0) activeModes.push('Net Banking');
+
+    const summaryMode: PaymentMode = activeModes.length > 1
+      ? 'Split'
+      : activeModes[0] === 'GPay / PhonePe'
+      ? 'UPI'
+      : activeModes[0] === 'Net Banking'
+      ? 'Bank Transfer'
+      : 'Cash';
+
+    const closingTransactionId = `tx_close_${bill.id}_${Date.now()}`;
+
+    submittingRef.current = true;
     setLoading(true);
     try {
       await onConfirmClose({
         billId: bill.id,
         partyId: party.id,
         closingDate,
-        paymentMode,
+        paymentMode: summaryMode,
+        paymentModes: activeModes,
+        splitAllocations: {
+          cashPaise,
+          upiPaise,
+          netBankingPaise,
+        },
+        cashPaise,
+        upiPaise,
+        netBankingPaise,
+        agreedSettlementPaise: settlementPaise,
+        totalAllocatedPaise,
+        closedBy: closedByName,
+        closedByUid,
+        closingTransactionId,
         notes: notes.trim(),
         finalSettlementAmountPaise: settlementPaise,
       });
@@ -63,6 +152,7 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
       setError(err?.message || 'Failed to close bill.');
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -180,35 +270,36 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
             </div>
           </div>
 
-          {/* Payment Mode & Closing Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                Settlement Mode *
-              </label>
-              <select
-                value={paymentMode}
-                onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 font-semibold"
-              >
-                <option value="Cash">Cash</option>
-                <option value="UPI">UPI / GPay / PhonePe</option>
-                <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
-                <option value="Cheque">Cheque</option>
-              </select>
-            </div>
+          {/* Multi-Mode Split Settlement Allocation */}
+          <SplitPaymentSelector
+            agreedAmountPaise={settlementPaise}
+            state={splitState}
+            onChange={setSplitState}
+            label="Settlement Payment Allocation"
+          />
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                Closing Remarks
-              </label>
-              <input
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
-              />
+          {/* Closing Remarks */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
+              Closing Remarks
+            </label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+            />
+          </div>
+
+          {/* Immutable Audit Trail Signature */}
+          <div className="p-3 bg-slate-100/90 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-slate-600">
+              <ShieldCheck className="w-4 h-4 text-brand-900 shrink-0" />
+              <span>Immutable Audit Signature:</span>
             </div>
+            <span className="font-bold text-brand-950 font-mono text-[11px]">
+              Closed By: {closedByName} {closedByUid ? `(${closedByUid.substring(0, 8)}...)` : ''}
+            </span>
           </div>
 
           <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs flex items-start space-x-2">
@@ -229,8 +320,8 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="px-6 py-2.5 bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-70 cursor-pointer"
+              disabled={loading || !isAllocationExact}
+              className="px-6 py-2.5 bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {loading ? (
                 <>

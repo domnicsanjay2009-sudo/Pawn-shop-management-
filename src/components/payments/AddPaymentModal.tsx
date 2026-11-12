@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { X, CreditCard, Calendar, IndianRupee, Loader2, ArrowRight } from 'lucide-react';
 import { Party, Bill, PaymentMode } from '../../types';
 import { rupeesToPaise, allocatePayment, evaluateBillStatus } from '../../utils/calculations';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
+import { SplitPaymentSelector, SplitPaymentState } from './SplitPaymentSelector';
 
 interface AddPaymentModalProps {
   party: Party;
@@ -26,33 +27,70 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   const [selectedBillId, setSelectedBillId] = useState(bill?.id || (activeBills[0]?.id || ''));
   const [amountRupees, setAmountRupees] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>('Cash');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const submittingRef = useRef(false);
+
+  // Multi-Mode Split Payment Allocation State (Module 7)
+  const [splitState, setSplitState] = useState<SplitPaymentState>({
+    cashSelected: true,
+    upiSelected: false,
+    netBankingSelected: false,
+    cashRupees: '',
+    upiRupees: '',
+    netBankingRupees: '',
+  });
 
   const currentBill = useMemo(() => {
     return activeBills.find((b) => b.id === selectedBillId) || bill;
   }, [activeBills, selectedBillId, bill]);
 
+  const agreedAmountPaise = useMemo(() => {
+    const parsed = parseFloat(amountRupees);
+    return isNaN(parsed) || parsed <= 0 ? 0 : rupeesToPaise(parsed);
+  }, [amountRupees]);
+
+  // Synchronize single selected mode amount when agreed amount is typed
+  useEffect(() => {
+    const activeCount =
+      (splitState.cashSelected ? 1 : 0) +
+      (splitState.upiSelected ? 1 : 0) +
+      (splitState.netBankingSelected ? 1 : 0);
+
+    if (activeCount === 1) {
+      if (splitState.cashSelected) {
+        setSplitState((prev) => ({ ...prev, cashRupees: amountRupees }));
+      } else if (splitState.upiSelected) {
+        setSplitState((prev) => ({ ...prev, upiRupees: amountRupees }));
+      } else if (splitState.netBankingSelected) {
+        setSplitState((prev) => ({ ...prev, netBankingRupees: amountRupees }));
+      }
+    }
+  }, [amountRupees, splitState.cashSelected, splitState.upiSelected, splitState.netBankingSelected]);
+
   // Real-time calculation of allocation
   const allocationBreakdown = useMemo(() => {
-    if (!currentBill) return null;
-
-    const parsedRupees = parseFloat(amountRupees);
-    const amountPaise = isNaN(parsedRupees) || parsedRupees <= 0 ? 0 : rupeesToPaise(parsedRupees);
+    if (!currentBill || agreedAmountPaise <= 0) return null;
 
     const finStatus = evaluateBillStatus(currentBill, paymentDate);
-    const allocation = allocatePayment(currentBill, amountPaise, paymentDate);
+    const allocation = allocatePayment(currentBill, agreedAmountPaise, paymentDate);
 
     return {
       finStatus,
       allocation,
     };
-  }, [currentBill, amountRupees, paymentDate]);
+  }, [currentBill, agreedAmountPaise, paymentDate]);
+
+  const cashPaise = splitState.cashSelected ? rupeesToPaise(splitState.cashRupees) : 0;
+  const upiPaise = splitState.upiSelected ? rupeesToPaise(splitState.upiRupees) : 0;
+  const netBankingPaise = splitState.netBankingSelected ? rupeesToPaise(splitState.netBankingRupees) : 0;
+  const totalAllocatedPaise = cashPaise + upiPaise + netBankingPaise;
+  const isAllocationExact = totalAllocatedPaise === agreedAmountPaise && agreedAmountPaise > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || loading) return;
     setError('');
 
     if (!currentBill) {
@@ -60,31 +98,72 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
       return;
     }
 
-    const amt = parseFloat(amountRupees);
-    if (isNaN(amt) || amt <= 0) {
-      setError('Please enter a valid payment amount.');
+    if (agreedAmountPaise <= 0) {
+      setError('Please enter a valid agreed payment amount.');
       return;
     }
 
-    const amountPaise = rupeesToPaise(amt);
+    // Split payment exact reconciliation check (Paise precision)
+    if (!splitState.cashSelected && !splitState.upiSelected && !splitState.netBankingSelected) {
+      setError('Please select at least one payment mode (Cash, GPay/PhonePe, or Net Banking).');
+      return;
+    }
 
+    if (totalAllocatedPaise < agreedAmountPaise) {
+      const diff = agreedAmountPaise - totalAllocatedPaise;
+      setError(`Reconciliation failed: Underpayment by ${formatCurrencyPaise(diff)}. Split allocations must match agreed payment exactly.`);
+      return;
+    }
+
+    if (totalAllocatedPaise > agreedAmountPaise) {
+      const diff = totalAllocatedPaise - agreedAmountPaise;
+      setError(`Reconciliation failed: Overpayment by ${formatCurrencyPaise(diff)}. Split allocations must match agreed payment exactly.`);
+      return;
+    }
+
+    const activeModes: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[] = [];
+    if (splitState.cashSelected && cashPaise > 0) activeModes.push('Cash');
+    if (splitState.upiSelected && upiPaise > 0) activeModes.push('GPay / PhonePe');
+    if (splitState.netBankingSelected && netBankingPaise > 0) activeModes.push('Net Banking');
+
+    const summaryMode: PaymentMode = activeModes.length > 1
+      ? 'Split'
+      : activeModes[0] === 'GPay / PhonePe'
+      ? 'UPI'
+      : activeModes[0] === 'Net Banking'
+      ? 'Bank Transfer'
+      : 'Cash';
+
+    submittingRef.current = true;
     setLoading(true);
     try {
       await onSavePayment({
         billId: currentBill.id,
         partyId: party.id,
         partyName: party.name,
-        amountPaise,
+        amountPaise: agreedAmountPaise,
+        agreedPaymentPaise: agreedAmountPaise,
+        totalAllocatedPaise,
         paymentDate,
-        paymentMode,
+        paymentMode: summaryMode,
+        paymentModes: activeModes,
+        splitAllocations: {
+          cashPaise,
+          upiPaise,
+          netBankingPaise,
+        },
+        cashPaise,
+        upiPaise,
+        netBankingPaise,
         notes: notes.trim(),
-        idempotencyKey: `pay_${currentBill.id}_${Date.now()}`,
+        idempotencyKey: `pay_${currentBill.id}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       });
       onClose();
     } catch (err: any) {
       setError(err?.message || 'Payment submission failed.');
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -223,36 +302,26 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
             </div>
           )}
 
-          {/* Payment Mode & Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                Payment Mode *
-              </label>
-              <select
-                value={paymentMode}
-                onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 font-semibold"
-              >
-                <option value="Cash">Cash</option>
-                <option value="UPI">UPI / GPay / PhonePe</option>
-                <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
-                <option value="Cheque">Cheque</option>
-              </select>
-            </div>
+          {/* Multi-Mode Split Payment Engine */}
+          <SplitPaymentSelector
+            agreedAmountPaise={agreedAmountPaise}
+            state={splitState}
+            onChange={setSplitState}
+            label="Payment Mode Allocation"
+          />
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                Receipt Notes
-              </label>
-              <input
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g. Part payment received"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
-              />
-            </div>
+          {/* Receipt Notes */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
+              Receipt Notes (Optional)
+            </label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Part payment received via Cash & GPay"
+              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
+            />
           </div>
 
           {/* Modal Actions */}
@@ -266,8 +335,8 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-70 cursor-pointer"
+              disabled={loading || !isAllocationExact}
+              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {loading ? (
                 <>
