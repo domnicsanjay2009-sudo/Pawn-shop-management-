@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Mail, Lock, Eye, EyeOff, ShieldCheck, Loader2, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mail, Lock, Eye, EyeOff, ShieldCheck, Loader2, ArrowLeft, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../common/Toast';
 
@@ -14,20 +14,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onOpenRegister,
   onOpenForgotPassword,
 }) => {
-  const { login, resendVerification } = useAuth();
+  const { login, resendVerification, checkVerificationStatus, authBanner, clearAuthBanner } = useAuth();
   const { showToast } = useToast();
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(authBanner?.prefillEmail || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isUnverified, setIsUnverified] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(false);
+  const [checkingVerified, setCheckingVerified] = useState(false);
   const [unverifiedUser, setUnverifiedUser] = useState<any>(null);
+
+  useEffect(() => {
+    if (authBanner?.prefillEmail && !email) {
+      setEmail(authBanner.prefillEmail);
+    }
+  }, [authBanner?.prefillEmail, email]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setErrorMessage('');
     setIsUnverified(false);
 
@@ -37,28 +45,62 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
 
     setLoading(true);
-    const result = await login(email, password);
-    setLoading(false);
+    try {
+      const result = await login(email, password);
 
-    if (!result.success) {
-      setErrorMessage(result.error || 'Authentication failed.');
-      if (result.isUnverified) {
-        setIsUnverified(true);
-        setUnverifiedUser(result.user);
+      if (!result.success) {
+        setErrorMessage(result.error || 'Authentication failed.');
+        if (result.isUnverified) {
+          setIsUnverified(true);
+          setUnverifiedUser(result.user);
+        }
+      } else {
+        clearAuthBanner();
+        showToast('Login successful. Welcome back!', 'success');
       }
-    } else {
-      showToast('Login successful. Welcome back!', 'success');
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Unable to sign in right now. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleResendVerification = async () => {
+    if (resendingEmail) return;
     setResendingEmail(true);
-    const res = await resendVerification(unverifiedUser);
-    setResendingEmail(false);
-    if (res.success) {
-      showToast('Verification email resent! Please check your inbox and spam folder.', 'success');
-    } else {
-      showToast(res.error || 'Failed to resend verification email.', 'error');
+    try {
+      const res = await resendVerification(unverifiedUser);
+      if (res.alreadyVerified) {
+        setIsUnverified(false);
+        setErrorMessage('');
+        showToast('Your email is verified! Click Login to sign in.', 'success');
+      } else if (res.success) {
+        showToast('Verification email resent! Please check your inbox and spam folder.', 'success');
+      } else {
+        showToast(res.error || 'Failed to resend verification email.', 'error');
+      }
+    } finally {
+      setResendingEmail(false);
+    }
+  };
+
+  const handleCheckVerifiedClick = async () => {
+    if (checkingVerified) return;
+    setCheckingVerified(true);
+    try {
+      const res = await checkVerificationStatus(unverifiedUser);
+      if (res.verified) {
+        setIsUnverified(false);
+        setUnverifiedUser(null);
+        setErrorMessage('');
+        showToast('Email verified! Please click Login with your password.', 'success');
+      } else {
+        setErrorMessage(
+          res.error || 'Your email address is not verified yet. Please check your inbox and try again.'
+        );
+      }
+    } finally {
+      setCheckingVerified(false);
     }
   };
 
@@ -85,26 +127,64 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </p>
         </div>
 
+        {/* Post-Verification / Registration Status Banner */}
+        {authBanner && !errorMessage && (
+          <div
+            className={`mb-6 p-4 rounded-xl text-sm font-medium border flex items-start space-x-2.5 ${
+              authBanner.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : authBanner.type === 'error'
+                ? 'bg-rose-50 border-rose-200 text-rose-700'
+                : 'bg-blue-50 border-blue-200 text-blue-800'
+            }`}
+          >
+            {authBanner.type === 'success' && (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            )}
+            <span>{authBanner.message}</span>
+          </div>
+        )}
+
         {/* Error message alert */}
         {errorMessage && (
           <div className="mb-6 p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm font-medium">
             <p>{errorMessage}</p>
             {isUnverified && (
-              <button
-                type="button"
-                onClick={handleResendVerification}
-                disabled={resendingEmail}
-                className="mt-2.5 inline-flex items-center text-xs font-bold text-accent-700 hover:text-accent-800 underline cursor-pointer disabled:opacity-60"
-              >
-                {resendingEmail ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-                    <span>Resending verification email...</span>
-                  </>
-                ) : (
-                  <span>Resend Verification Email</span>
-                )}
-              </button>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resendingEmail || checkingVerified}
+                  className="inline-flex items-center text-xs font-bold text-accent-700 hover:text-accent-800 underline cursor-pointer disabled:opacity-60"
+                >
+                  {resendingEmail ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                      <span>Resending verification email...</span>
+                    </>
+                  ) : (
+                    <span>Resend Verification Email</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCheckVerifiedClick}
+                  disabled={checkingVerified || resendingEmail}
+                  className="inline-flex items-center text-xs font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer disabled:opacity-60"
+                >
+                  {checkingVerified ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                      <span>Checking...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      <span>I&apos;ve Verified — Check Status</span>
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         )}

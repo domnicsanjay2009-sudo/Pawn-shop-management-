@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { User, Store, Phone, MapPin, Mail, Lock, Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../common/Toast';
-import { isValidIndianPhone, isValidPassword } from '../../utils/validators';
+import { isValidIndianPhone, isValidEmail } from '../../utils/validators';
 
 interface CreateAccountScreenProps {
   onBackToLogin: () => void;
@@ -23,10 +23,17 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({ onBack
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const submittingRef = useRef(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || loading) return;
     setErrorMessage('');
+
+    if (!ownerName.trim() || !shopName.trim() || !address.trim()) {
+      setErrorMessage('Please fill in all required owner and shop details.');
+      return;
+    }
 
     // Field 3 Validation: Shop phone number must contain exactly 10 digits
     if (!isValidIndianPhone(phone)) {
@@ -34,10 +41,14 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({ onBack
       return;
     }
 
-    // Password Validation
-    const passCheck = isValidPassword(newPassword);
-    if (!passCheck.valid) {
-      setErrorMessage(passCheck.error || 'Password must be at least 4 characters long.');
+    if (!isValidEmail(email)) {
+      setErrorMessage('Please enter a valid Mail ID.');
+      return;
+    }
+
+    // Password Validation (Firebase Email/Password requires at least 6 characters)
+    if (newPassword.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
       return;
     }
 
@@ -47,22 +58,31 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({ onBack
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
-    const result = await register({
-      ownerName,
-      shopName,
-      phone,
-      address,
-      email,
-      password: newPassword,
-    });
-    setLoading(false);
+    try {
+      const result = await register({
+        ownerName,
+        shopName,
+        phone,
+        address,
+        email,
+        password: newPassword,
+      });
 
-    if (!result.success) {
-      setErrorMessage(result.error || 'Failed to create account.');
-    } else {
-      showToast('Account created! A verification link has been sent to your email. Please verify before logging in.', 'success');
-      onBackToLogin(); // Return to Login Page as specified
+      if (!result.success) {
+        setErrorMessage(result.error || 'Failed to create account.');
+      } else {
+        showToast(
+          'Account created successfully! Please verify your email address before logging in.',
+          'success'
+        );
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'An unexpected error occurred during registration.');
+    } finally {
+      setLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -197,7 +217,7 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({ onBack
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimum 4 characters"
+                placeholder="Minimum 6 characters"
                 className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-brand-950 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
               />
               <button

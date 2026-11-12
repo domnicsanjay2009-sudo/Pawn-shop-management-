@@ -20,6 +20,7 @@ const mockState: {
 
 vi.mock('../services/firebase', () => ({
   db: { __mockDb: true },
+  authPersistenceReady: Promise.resolve(),
   auth: {
     get currentUser() {
       return mockState.currentUser;
@@ -33,6 +34,8 @@ vi.mock('firebase/auth', () => ({
   sendEmailVerification: vi.fn(),
   sendPasswordResetEmail: vi.fn(),
   signOut: vi.fn(),
+  reload: vi.fn(),
+  applyActionCode: vi.fn(),
 }));
 
 vi.mock('firebase/firestore', () => ({

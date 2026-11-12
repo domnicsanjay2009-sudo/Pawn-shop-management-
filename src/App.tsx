@@ -9,6 +9,7 @@ import { WelcomeScreen } from './components/auth/WelcomeScreen';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { CreateAccountScreen } from './components/auth/CreateAccountScreen';
 import { ForgotPasswordScreen } from './components/auth/ForgotPasswordScreen';
+import { EmailVerificationScreen } from './components/auth/EmailVerificationScreen';
 import { AppLockScreen } from './components/auth/AppLockScreen';
 
 import { Sidebar, NavigationTab } from './components/layout/Sidebar';
@@ -55,7 +56,14 @@ import {
 } from './services/settingsService';
 
 const MainApplication: React.FC = () => {
-  const { currentUser, shopProfile, loading: authLoading } = useAuth();
+  const {
+    currentUser,
+    pendingVerificationUser,
+    shopProfile,
+    loading: authLoading,
+    shouldShowLogin,
+    consumeShouldShowLogin,
+  } = useAuth();
   const { isLocked } = useAppLock();
   const {
     isDemoMode,
@@ -73,6 +81,13 @@ const MainApplication: React.FC = () => {
 
   // Navigation and view state
   const [authView, setAuthView] = useState<'welcome' | 'login' | 'register' | 'forgot'>('welcome');
+
+  useEffect(() => {
+    if (shouldShowLogin) {
+      setAuthView('login');
+      consumeShouldShowLogin();
+    }
+  }, [shouldShowLogin, consumeShouldShowLogin]);
   const [currentTab, setCurrentTab] = useState<NavigationTab>('home');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -237,8 +252,12 @@ const MainApplication: React.FC = () => {
     );
   }
 
-  // Unauthenticated Screens
+  // Unauthenticated Screens (unverified users are strictly blocked from protected workspace)
   if (!currentUser) {
+    if (pendingVerificationUser) {
+      return <EmailVerificationScreen />;
+    }
+
     if (authView === 'login') {
       return (
         <LoginScreen

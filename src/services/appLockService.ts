@@ -44,7 +44,7 @@ export function isAppLocked(): boolean {
   const config = getAppLockConfig();
   if (config.type === 'none') return false;
 
-  const lockedFlag = sessionStorage.getItem(LOCK_STATE_KEY);
+  const lockedFlag = localStorage.getItem(LOCK_STATE_KEY) ?? sessionStorage.getItem(LOCK_STATE_KEY);
   if (lockedFlag === 'true') return true;
 
   // Check 2-minute background inactivity
@@ -52,6 +52,7 @@ export function isAppLocked(): boolean {
   if (lastActiveStr) {
     const lastActive = parseInt(lastActiveStr, 10);
     if (!isNaN(lastActive) && Date.now() - lastActive > INACTIVITY_TIMEOUT_MS) {
+      localStorage.setItem(LOCK_STATE_KEY, 'true');
       sessionStorage.setItem(LOCK_STATE_KEY, 'true');
       return true;
     }
@@ -63,13 +64,21 @@ export function isAppLocked(): boolean {
 export function lockApp(): void {
   const config = getAppLockConfig();
   if (config.type !== 'none') {
+    localStorage.setItem(LOCK_STATE_KEY, 'true');
     sessionStorage.setItem(LOCK_STATE_KEY, 'true');
   }
 }
 
 export function unlockApp(): void {
+  localStorage.removeItem(LOCK_STATE_KEY);
   sessionStorage.removeItem(LOCK_STATE_KEY);
   touchLastActive();
+}
+
+export function clearAppLockActiveState(): void {
+  localStorage.removeItem(LOCK_STATE_KEY);
+  sessionStorage.removeItem(LOCK_STATE_KEY);
+  localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString());
 }
 
 export function touchLastActive(): void {

@@ -202,9 +202,13 @@ export const AppLockScreen: React.FC = () => {
             </div>
 
             <h3 className="text-2xl font-bold text-brand-950 mb-1">Pawn Shop Lock</h3>
-            <p className="text-xs text-slate-500 mb-6">
+            <p className="text-xs text-slate-500 mb-2">
               Enter your {config.type === 'pin' ? 'PIN' : 'Password'} to resume work
             </p>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-semibold mb-5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>Account Session Active • Interface Locked</span>
+            </div>
 
             {error && (
               <div className="mb-4 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium rounded-lg flex items-center justify-center space-x-1.5">

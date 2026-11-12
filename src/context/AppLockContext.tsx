@@ -1,15 +1,17 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   getAppLockConfig,
   saveAppLockConfig,
   isAppLocked,
   lockApp,
   unlockApp,
+  clearAppLockActiveState,
   touchLastActive,
   verifyCredential,
   authenticateWithBiometrics,
   isBiometricSupported
 } from '../services/appLockService';
+import { useAuth } from './AuthContext';
 import { AppLockConfig } from '../types';
 
 interface AppLockContextType {
@@ -26,21 +28,42 @@ interface AppLockContextType {
 const AppLockContext = createContext<AppLockContextType | undefined>(undefined);
 
 export const AppLockProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentUser } = useAuth();
   const [config, setConfig] = useState<AppLockConfig>(getAppLockConfig());
-  const [isLocked, setIsLocked] = useState<boolean>(isAppLocked());
+  const [isLocked, setIsLocked] = useState<boolean>(() => (currentUser ? isAppLocked() : false));
   const [biometricAvailable, setBiometricAvailable] = useState<boolean>(false);
+  const prevUserUidRef = useRef<string | null>(currentUser?.uid || null);
 
   useEffect(() => {
     isBiometricSupported().then(setBiometricAvailable);
   }, []);
 
-  // Background and inactivity tracking (2-minute rule)
+  // Sync lock screen strictly with active user transitions without altering Firebase Auth session
   useEffect(() => {
-    touchLastActive();
+    const nextUid = currentUser?.uid || null;
+    const prevUid = prevUserUidRef.current;
+
+    if (!nextUid && prevUid) {
+      // User explicitly logged out or session ended
+      clearAppLockActiveState();
+      setIsLocked(false);
+    } else if (nextUid && !prevUid) {
+      // Freshly logged-in or restored user: enforce lock only if already locked/inactive
+      setIsLocked(isAppLocked());
+    }
+    prevUserUidRef.current = nextUid;
+  }, [currentUser?.uid]);
+
+  // Background and inactivity tracking (2-minute UI lock; never signs out Firebase Auth)
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!isLocked) {
+      touchLastActive();
+    }
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        touchLastActive();
+        if (!isLocked) touchLastActive();
       } else {
         if (isAppLocked()) {
           setIsLocked(true);
@@ -73,7 +96,7 @@ export const AppLockProvider: React.FC<{ children: React.ReactNode }> = ({ child
       window.removeEventListener('keydown', handleUserActivity);
       clearInterval(interval);
     };
-  }, [isLocked]);
+  }, [isLocked, currentUser?.uid]);
 
   const verifyInput = async (text: string): Promise<boolean> => {
     const valid = await verifyCredential(text);

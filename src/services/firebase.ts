@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics, isSupported } from 'firebase/analytics';
@@ -21,6 +21,12 @@ export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getA
 
 // Core Firebase Services
 export const auth = getAuth(app);
+export const authPersistenceReady: Promise<void> =
+  typeof window !== 'undefined'
+    ? setPersistence(auth, browserLocalPersistence).catch((err) => {
+        console.warn('Unable to apply browserLocalPersistence:', err);
+      })
+    : Promise.resolve();
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'asia-south1'); // Asia-South1 (Mumbai) region

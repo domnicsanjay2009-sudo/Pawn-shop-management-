@@ -27,7 +27,7 @@ export async function startDeviceSession(
   shopName: string,
   callbacks?: SessionCallbacks
 ): Promise<string> {
-  stopDeviceSession(); // Clear any previous active session
+  await stopDeviceSession(false); // Clear any previous timers/listeners without recording false logout
 
   const metadata = getClientDeviceMetadata();
   const sessionId = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
@@ -258,9 +258,11 @@ export async function sendHeartbeat(
 }
 
 /**
- * Clears timers, listeners, and records session logout
+ * Clears timers and snapshot listeners, and optionally marks the session ended in Firestore.
+ * During React StrictMode remounts or navigation unmounts, markEnded=false avoids prematurely
+ * terminating an active session.
  */
-export async function stopDeviceSession(): Promise<void> {
+export async function stopDeviceSession(markEnded = true): Promise<void> {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
@@ -272,6 +274,10 @@ export async function stopDeviceSession(): Promise<void> {
   if (shopUnsubscribe) {
     shopUnsubscribe();
     shopUnsubscribe = null;
+  }
+
+  if (!markEnded) {
+    return;
   }
 
   const sessionId = sessionStorage.getItem(SESSION_STORAGE_KEY);
