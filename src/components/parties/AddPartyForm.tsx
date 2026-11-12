@@ -1,9 +1,30 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UserPlus, ChevronDown, ChevronUp, User, Phone, MapPin, Camera, Loader2 } from 'lucide-react';
+import {
+  UserPlus,
+  ChevronDown,
+  ChevronUp,
+  User,
+  Phone,
+  MapPin,
+  Camera,
+  Upload,
+  FileText,
+  X,
+  Loader2
+} from 'lucide-react';
 import { isValidIndianPhone } from '../../utils/validators';
+import { processUploadFile } from '../../services/fileStorageService';
 
 interface AddPartyFormProps {
-  onSave: (data: { name: string; phone: string; address: string; photoUrl?: string }) => Promise<void>;
+  onSave: (data: {
+    name: string;
+    phone: string;
+    address: string;
+    photoUrl?: string;
+    documentUrl?: string;
+    documentName?: string;
+    documentType?: string;
+  }) => Promise<void>;
 }
 
 export const AddPartyForm: React.FC<AddPartyFormProps> = ({ onSave }) => {
@@ -12,10 +33,15 @@ export const AddPartyForm: React.FC<AddPartyFormProps> = ({ onSave }) => {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
+  const [documentUrl, setDocumentUrl] = useState('');
+  const [documentName, setDocumentName] = useState('');
+  const [documentType, setDocumentType] = useState('');
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Focus cursor in first field when expanded
   useEffect(() => {
@@ -29,6 +55,47 @@ export const AddPartyForm: React.FC<AddPartyFormProps> = ({ onSave }) => {
   const handleToggle = () => {
     setIsExpanded((prev) => !prev);
     setError('');
+  };
+
+  const clearUploadedFile = () => {
+    setPhotoUrl('');
+    setDocumentUrl('');
+    setDocumentName('');
+    setDocumentType('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setError('');
+    setUploadingFile(true);
+    try {
+      const processed = await processUploadFile(file, {
+        allowPdf: true,
+        maxDimension: 800,
+        quality: 0.78,
+        preserveTransparency: false,
+      });
+
+      if (processed.isImage) {
+        setPhotoUrl(processed.dataUrl);
+        setDocumentUrl('');
+      } else {
+        setPhotoUrl('');
+        setDocumentUrl(processed.dataUrl);
+      }
+      setDocumentName(processed.fileName);
+      setDocumentType(processed.fileType);
+    } catch (err: any) {
+      setError(err?.message || 'Unable to process selected file.');
+    } finally {
+      setUploadingFile(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,14 +123,17 @@ export const AddPartyForm: React.FC<AddPartyFormProps> = ({ onSave }) => {
         name: name.trim(),
         phone: phone.trim(),
         address: address.trim(),
-        photoUrl: photoUrl.trim() || undefined,
+        photoUrl: photoUrl || undefined,
+        documentUrl: documentUrl || undefined,
+        documentName: documentName || undefined,
+        documentType: documentType || undefined,
       });
 
       // Reset and collapse form after successful save as specified
       setName('');
       setPhone('');
       setAddress('');
-      setPhotoUrl('');
+      clearUploadedFile();
       setIsExpanded(false);
     } catch (err: any) {
       setError(err?.message || 'Failed to save customer record.');
@@ -162,21 +232,69 @@ export const AddPartyForm: React.FC<AddPartyFormProps> = ({ onSave }) => {
               </div>
             </div>
 
-            {/* Optional Photo URL / avatar */}
+            {/* Optional Customer Photo / Document File Upload */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-                Optional Photo URL / Document Link
+                Optional Customer Photo / Document Upload
               </label>
-              <div className="relative">
-                <Camera className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="url"
-                  value={photoUrl}
-                  onChange={(e) => setPhotoUrl(e.target.value)}
-                  placeholder="https://example.com/photo.jpg (optional)"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
-                />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              <div className="flex items-stretch gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex-1 flex items-center space-x-3 px-3.5 py-2.5 bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-left text-sm text-slate-600 transition-colors min-w-0 cursor-pointer"
+                >
+                  {photoUrl ? (
+                    <img
+                      src={photoUrl}
+                      alt="Selected preview"
+                      className="w-7 h-7 rounded-full object-cover border border-slate-200 shrink-0"
+                    />
+                  ) : documentUrl ? (
+                    <FileText className="w-4 h-4 text-accent-600 shrink-0" />
+                  ) : (
+                    <Camera className="w-4 h-4 text-slate-400 shrink-0" />
+                  )}
+                  <span className="truncate text-xs sm:text-sm">
+                    {documentName || 'Select photo (JPG, PNG, WEBP) or PDF (optional)'}
+                  </span>
+                </button>
+
+                {(photoUrl || documentUrl) && (
+                  <button
+                    type="button"
+                    onClick={clearUploadedFile}
+                    title="Remove selected file"
+                    className="px-3 py-2 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 rounded-xl flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={uploadingFile}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-accent-600 hover:bg-accent-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors shrink-0 disabled:opacity-60 cursor-pointer"
+                >
+                  {uploadingFile ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                  <span>{photoUrl || documentUrl ? 'Change' : 'Browse File'}</span>
+                </button>
               </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Supports JPG, PNG, WEBP, GIF images (up to 5 MB) or PDF documents (up to 450 KB).
+              </p>
             </div>
 
             {/* Form Actions */}

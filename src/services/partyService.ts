@@ -19,7 +19,15 @@ const PARTIES_COLLECTION = 'parties';
 
 export async function addParty(
   shopId: string,
-  partyData: { name: string; phone: string; address: string; photoUrl?: string }
+  partyData: {
+    name: string;
+    phone: string;
+    address: string;
+    photoUrl?: string;
+    documentUrl?: string;
+    documentName?: string;
+    documentType?: string;
+  }
 ): Promise<Party> {
   const newPartyData = {
     shopId,
@@ -27,6 +35,9 @@ export async function addParty(
     phone: partyData.phone.trim(),
     address: partyData.address.trim(),
     photoUrl: partyData.photoUrl || '',
+    documentUrl: partyData.documentUrl || '',
+    documentName: partyData.documentName || '',
+    documentType: partyData.documentType || '',
     totalBills: 0,
     createdAt: Date.now(),
     updatedAt: Date.now(),

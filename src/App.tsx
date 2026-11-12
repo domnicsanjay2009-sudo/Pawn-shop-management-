@@ -139,8 +139,12 @@ const MainApplication: React.FC = () => {
       return;
     }
 
-    if (!shopProfile?.shopId) return;
-    const p = await addParty(shopProfile.shopId, data);
+    const targetShopId = shopProfile?.shopId || (currentUser ? `shop_${currentUser.uid}` : '');
+    if (!targetShopId) {
+      showToast('Shop profile unavailable. Please refresh and try again.', 'error');
+      return;
+    }
+    const p = await addParty(targetShopId, data);
     setParties((prev) => [p, ...prev]);
     showToast(`Party ${p.name} added successfully.`, 'success');
   };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock,
   Percent,
@@ -9,15 +9,22 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Shield
+  Shield,
+  Store,
+  Edit3,
+  Upload,
+  X
 } from 'lucide-react';
 import { AppSettings as IAppSettings, InterestDuration } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useAppLock } from '../../context/AppLockContext';
 import { useToast } from '../common/Toast';
+import { ShopLogoBadge } from '../common/ShopLogoBadge';
 import { saveSettings } from '../../services/settingsService';
+import { updateShopProfile } from '../../services/authService';
+import { processUploadFile } from '../../services/fileStorageService';
 import { hashCredential, authenticateWithBiometrics } from '../../services/appLockService';
-import { isValidPIN, isValidPassword } from '../../utils/validators';
+import { isValidPIN, isValidPassword, isValidIndianPhone, isValidEmail } from '../../utils/validators';
 
 interface AppSettingsProps {
   settings: IAppSettings;
@@ -30,9 +37,155 @@ export const AppSettings: React.FC<AppSettingsProps> = ({
   onUpdateSettings,
   onOpenIntroduction,
 }) => {
-  const { shopProfile } = useAuth();
+  const { shopProfile, refreshProfile } = useAuth();
   const { config, setLockConfig, biometricAvailable } = useAppLock();
   const { showToast } = useToast();
+
+  // Shop Profile Edit State
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [profileFormError, setProfileFormError] = useState('');
+  const [profileForm, setProfileForm] = useState({
+    shopName: shopProfile?.shopName || '',
+    ownerName: shopProfile?.ownerName || '',
+    phone: shopProfile?.phone || '',
+    email: shopProfile?.email || '',
+    address: shopProfile?.address || '',
+    logoUrl: shopProfile?.logoUrl || '',
+  });
+
+  useEffect(() => {
+    if (shopProfile && !isEditingProfile) {
+      setProfileForm({
+        shopName: shopProfile.shopName || '',
+        ownerName: shopProfile.ownerName || '',
+        phone: shopProfile.phone || '',
+        email: shopProfile.email || '',
+        address: shopProfile.address || '',
+        logoUrl: shopProfile.logoUrl || '',
+      });
+    }
+  }, [shopProfile, isEditingProfile]);
+
+  const handleStartEditProfile = () => {
+    setProfileFormError('');
+    setProfileForm({
+      shopName: shopProfile?.shopName || '',
+      ownerName: shopProfile?.ownerName || '',
+      phone: shopProfile?.phone || '',
+      email: shopProfile?.email || '',
+      address: shopProfile?.address || '',
+      logoUrl: shopProfile?.logoUrl || '',
+    });
+    setIsEditingProfile(true);
+  };
+
+  const handleCancelEditProfile = () => {
+    setIsEditingProfile(false);
+    setProfileFormError('');
+    setProfileForm({
+      shopName: shopProfile?.shopName || '',
+      ownerName: shopProfile?.ownerName || '',
+      phone: shopProfile?.phone || '',
+      email: shopProfile?.email || '',
+      address: shopProfile?.address || '',
+      logoUrl: shopProfile?.logoUrl || '',
+    });
+  };
+
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setProfileFormError('');
+    setUploadingLogo(true);
+    try {
+      const processed = await processUploadFile(file, {
+        allowPdf: false,
+        maxDimension: 320,
+        quality: 0.85,
+        preserveTransparency: true,
+      });
+      setProfileForm((prev) => ({ ...prev, logoUrl: processed.dataUrl }));
+      showToast('Shop logo ready. Click "Save Changes" to apply across your shop.', 'info');
+    } catch (err: any) {
+      const msg = err?.message || 'Unable to process selected logo image.';
+      setProfileFormError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleSaveShopProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileFormError('');
+
+    const trimmedShopName = profileForm.shopName.trim();
+    const trimmedOwnerName = profileForm.ownerName.trim();
+    const trimmedPhone = profileForm.phone.trim();
+    const trimmedEmail = profileForm.email.trim();
+    const trimmedAddress = profileForm.address.trim();
+
+    if (trimmedShopName.length < 2) {
+      setProfileFormError('Please enter a valid Shop Name (at least 2 characters).');
+      return;
+    }
+    if (trimmedOwnerName.length < 2) {
+      setProfileFormError('Please enter a valid Owner Name (at least 2 characters).');
+      return;
+    }
+    if (!isValidIndianPhone(trimmedPhone)) {
+      setProfileFormError('Please enter a valid 10-digit Shop Phone Number.');
+      return;
+    }
+    if (!isValidEmail(trimmedEmail)) {
+      setProfileFormError('Please enter a valid Email ID.');
+      return;
+    }
+    if (trimmedAddress.length < 4) {
+      setProfileFormError('Please enter a valid Shop Address.');
+      return;
+    }
+
+    let activeShopId = shopProfile?.shopId;
+    if (!activeShopId) {
+      try {
+        const recovered = await refreshProfile();
+        activeShopId = recovered?.shopId;
+      } catch {
+        // handled below
+      }
+    }
+    if (!activeShopId) {
+      setProfileFormError('Shop profile is not available yet. Please refresh and try again.');
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      await updateShopProfile(activeShopId, {
+        shopName: trimmedShopName,
+        ownerName: trimmedOwnerName,
+        phone: trimmedPhone,
+        email: trimmedEmail,
+        address: trimmedAddress,
+        logoUrl: profileForm.logoUrl,
+      });
+      await refreshProfile();
+      setIsEditingProfile(false);
+      showToast('Shop profile updated successfully and synced to Firebase.', 'success');
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to update shop profile.';
+      setProfileFormError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   // Settings State: Exactly the 3 requested items
   const [duration, setDuration] = useState<InterestDuration>(
@@ -167,8 +320,225 @@ export const AppSettings: React.FC<AppSettingsProps> = ({
       <div>
         <h2 className="text-2xl font-bold text-brand-950">App Settings</h2>
         <p className="text-xs text-slate-500 mt-1">
-          Configure default interest parameters and local app lock security
+          Manage your shop profile, default interest parameters, and local app lock security
         </p>
+      </div>
+
+      {/* Edit Shop Profile Section */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 sm:p-8 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="flex items-center space-x-3">
+            <ShopLogoBadge
+              logoUrl={isEditingProfile ? profileForm.logoUrl : shopProfile?.logoUrl}
+              shopName={isEditingProfile ? profileForm.shopName : shopProfile?.shopName}
+              sizeClass="w-12 h-12"
+              iconClass="w-6 h-6 text-white"
+              roundedClass="rounded-xl"
+              fallbackBgClass="bg-brand-950 shadow-xs"
+            />
+            <div>
+              <h3 className="text-lg font-bold text-brand-950 flex items-center gap-2">
+                <span>Shop Profile</span>
+              </h3>
+              <p className="text-xs text-slate-500">
+                View and update your business details and shop branding logo
+              </p>
+            </div>
+          </div>
+
+          {!isEditingProfile && (
+            <button
+              type="button"
+              onClick={handleStartEditProfile}
+              className="inline-flex items-center justify-center space-x-2 px-4 py-2 rounded-xl bg-brand-950 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Edit</span>
+            </button>
+          )}
+        </div>
+
+        {profileFormError && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-medium flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{profileFormError}</span>
+          </div>
+        )}
+
+        {isEditingProfile ? (
+          <form onSubmit={handleSaveShopProfile} className="space-y-5">
+            {/* Logo Picker */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <ShopLogoBadge
+                logoUrl={profileForm.logoUrl}
+                shopName={profileForm.shopName || 'Shop Logo'}
+                sizeClass="w-16 h-16"
+                iconClass="w-7 h-7 text-white"
+                roundedClass="rounded-2xl"
+                fallbackBgClass="bg-brand-950"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-brand-950 flex items-center gap-1.5">
+                  <Store className="w-3.5 h-3.5 text-accent-600" />
+                  <span>Shop Logo</span>
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Upload a square JPG, PNG, WEBP, or GIF image (max 5 MB). Automatically optimized and synced across devices.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={handleLogoFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    disabled={uploadingLogo}
+                    onClick={() => logoInputRef.current?.click()}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-accent-600 hover:bg-accent-700 text-white text-xs font-semibold transition-colors disabled:opacity-60 cursor-pointer"
+                  >
+                    {uploadingLogo ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="w-3.5 h-3.5" />
+                    )}
+                    <span>{profileForm.logoUrl ? 'Change Logo' : 'Upload Logo'}</span>
+                  </button>
+                  {profileForm.logoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setProfileForm((prev) => ({ ...prev, logoUrl: '' }))}
+                      className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-rose-50 hover:text-rose-600 text-slate-600 text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Remove</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Shop Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={profileForm.shopName}
+                  onChange={(e) => setProfileForm((prev) => ({ ...prev, shopName: e.target.value }))}
+                  placeholder="Enter your pawn shop name"
+                  required
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Owner Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={profileForm.ownerName}
+                  onChange={(e) => setProfileForm((prev) => ({ ...prev, ownerName: e.target.value }))}
+                  placeholder="Enter shop owner full name"
+                  required
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Shop Phone Number <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="tel"
+                  value={profileForm.phone}
+                  onChange={(e) => setProfileForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  placeholder="10-digit mobile number"
+                  required
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Email ID <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={profileForm.email}
+                  onChange={(e) => setProfileForm((prev) => ({ ...prev, email: e.target.value }))}
+                  placeholder="shop@example.com"
+                  required
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+                Shop Address <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={2}
+                value={profileForm.address}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
+                placeholder="Complete shop street address, city, PIN"
+                required
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent-500"
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={handleCancelEditProfile}
+                disabled={savingProfile}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingProfile || uploadingLogo}
+                className="inline-flex items-center justify-center space-x-2 px-6 py-2.5 bg-accent-600 hover:bg-accent-700 text-white rounded-xl text-xs font-bold shadow-md shadow-accent-600/20 disabled:opacity-60 cursor-pointer"
+              >
+                {savingProfile ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                <span>Save Changes</span>
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+              <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Shop Name</p>
+              <p className="font-bold text-brand-950 mt-0.5">{shopProfile?.shopName || 'Not set'}</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+              <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Owner Name</p>
+              <p className="font-bold text-brand-950 mt-0.5">{shopProfile?.ownerName || 'Not set'}</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+              <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Shop Phone Number</p>
+              <p className="font-bold text-brand-950 mt-0.5">{shopProfile?.phone || 'Not set'}</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+              <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Email ID</p>
+              <p className="font-bold text-brand-950 mt-0.5 break-all">{shopProfile?.email || 'Not set'}</p>
+            </div>
+            <div className="sm:col-span-2 p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+              <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Shop Address</p>
+              <p className="font-medium text-brand-950 mt-0.5">{shopProfile?.address || 'Not set'}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Setting 1 & 2: Default Interest Duration & Percentage Form */}

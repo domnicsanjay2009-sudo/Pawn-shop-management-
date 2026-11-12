@@ -18,13 +18,15 @@ interface AuthContextType {
   currentUser: User | null;
   shopProfile: ShopProfile | null;
   loading: boolean;
+  profileLoading: boolean;
+  profileError: string | null;
   isSessionValid: boolean;
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string; isUnverified?: boolean; user?: User }>;
   register: (data: any) => Promise<{ success: boolean; error?: string }>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   resendVerification: (user?: User) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: () => Promise<ShopProfile | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,12 +35,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [shopProfile, setShopProfile] = useState<ShopProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [isSessionValid, setIsSessionValid] = useState(true);
 
-  const refreshProfile = async () => {
-    if (auth.currentUser) {
-      const profile = await getShopProfile(auth.currentUser.uid);
+  const refreshProfile = async (): Promise<ShopProfile | null> => {
+    const activeUser = auth.currentUser;
+    if (!activeUser) {
+      setShopProfile(null);
+      return null;
+    }
+
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      const profile = await getShopProfile(activeUser.uid, activeUser);
       setShopProfile(profile);
+      return profile;
+    } catch (err: any) {
+      const msg = err?.message || 'Unable to load shop profile.';
+      setProfileError(msg);
+      throw err;
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -51,15 +70,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await logoutShopOwner();
           setCurrentUser(null);
           setShopProfile(null);
+          setProfileError(null);
+          setProfileLoading(false);
           setIsSessionValid(false);
           setLoading(false);
           return;
         }
 
-        setCurrentUser(user);
-        setIsSessionValid(true);
-        const profile = await getShopProfile(user.uid);
-        setShopProfile(profile);
+        setProfileLoading(true);
+        setProfileError(null);
+
+        let profile: ShopProfile | null = null;
+        try {
+          profile = await getShopProfile(user.uid, user);
+        } catch (err: any) {
+          console.error('Auth listener profile load failed:', err);
+          setProfileError(err?.message || 'Unable to load your shop profile.');
+        }
 
         if (profile) {
           if (profile.isBlocked || profile.status === 'Blocked') {
@@ -68,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await logoutShopOwner();
             setCurrentUser(null);
             setShopProfile(null);
+            setProfileLoading(false);
             setIsSessionValid(false);
             setLoading(false);
             return;
@@ -79,11 +107,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await logoutShopOwner();
             setCurrentUser(null);
             setShopProfile(null);
+            setProfileLoading(false);
             setIsSessionValid(false);
             setLoading(false);
             return;
           }
+        }
 
+        setShopProfile(profile);
+        setCurrentUser(user);
+        setIsSessionValid(true);
+        setProfileLoading(false);
+
+        if (profile) {
           // Start device heartbeat session & remote kill-switch listener
           startDeviceSession(
             user.uid,
@@ -123,6 +159,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await stopDeviceSession();
         setCurrentUser(null);
         setShopProfile(null);
+        setProfileError(null);
+        setProfileLoading(false);
       }
       setLoading(false);
     });
@@ -136,29 +174,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, pass: string) => {
     const res = await loginShopOwner(email, pass);
     if (res.success && res.user) {
-      const profile = await getShopProfile(res.user.uid);
-      if (profile) {
-        if (profile.isBlocked || profile.status === 'Blocked') {
-          await logoutShopOwner();
-          await recordFailedLoginAttempt(email, res.user.uid, 'Account is blocked by administrator');
-          return {
-            success: false,
-            error: 'Your account has been blocked by the administrator. Please contact customer support.'
-          };
+      setProfileLoading(true);
+      setProfileError(null);
+      try {
+        const profile = await getShopProfile(res.user.uid, res.user);
+        if (profile) {
+          if (profile.isBlocked || profile.status === 'Blocked') {
+            await logoutShopOwner();
+            await recordFailedLoginAttempt(email, res.user.uid, 'Account is blocked by administrator');
+            return {
+              success: false,
+              error: 'Your account has been blocked by the administrator. Please contact customer support.'
+            };
+          }
+          if (profile.isSuspended || profile.status === 'Suspended' || profile.status === 'Disabled') {
+            await logoutShopOwner();
+            await recordFailedLoginAttempt(email, res.user.uid, 'Account access is suspended by administrator');
+            return {
+              success: false,
+              error: 'Your account access has been suspended by the administrator. Please contact customer support.'
+            };
+          }
         }
-        if (profile.isSuspended || profile.status === 'Suspended' || profile.status === 'Disabled') {
-          await logoutShopOwner();
-          await recordFailedLoginAttempt(email, res.user.uid, 'Account access is suspended by administrator');
-          return {
-            success: false,
-            error: 'Your account access has been suspended by the administrator. Please contact customer support.'
-          };
-        }
-      }
 
-      setIsSessionValid(true);
-      await refreshProfile();
-      return { success: true };
+        setShopProfile(profile);
+        setCurrentUser(res.user);
+        setIsSessionValid(true);
+        return { success: true };
+      } catch (err: any) {
+        const msg = err?.message || 'Unable to load your shop profile. Please try again.';
+        setProfileError(msg);
+        setCurrentUser(res.user);
+        setIsSessionValid(true);
+        return { success: true };
+      } finally {
+        setProfileLoading(false);
+      }
     }
 
     if (!res.success && !res.isUnverified) {
@@ -199,6 +250,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser,
         shopProfile,
         loading,
+        profileLoading,
+        profileError,
         isSessionValid,
         login,
         register,

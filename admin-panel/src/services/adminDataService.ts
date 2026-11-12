@@ -191,21 +191,27 @@ export interface PaymentTxItem {
 
 export interface SupportConversation {
   shopId: string;
+  ownerUid?: string;
   shopName?: string;
   ownerName?: string;
   ownerEmail?: string;
   lastMessage?: string;
   lastMessageAt?: number;
+  lastUpdated?: number;
+  lastSenderRole?: string;
   unreadAdminCount?: number;
 }
 
 export interface ChatMessage {
   id: string;
   senderUid: string;
+  senderEmail?: string;
   senderRole: 'shop_owner' | 'platform_admin' | 'staff';
+  senderType?: 'customer' | 'admin' | 'ai';
   senderName: string;
   messageText: string;
   timestamp: number;
+  clientMessageId?: string;
 }
 
 // -------------------------------------------------------------
@@ -619,12 +625,67 @@ export function subscribeToSubscriptionsAndPayments(callback: (data: { subscript
 }
 
 export function subscribeToSupportConversations(callback: (convs: SupportConversation[]) => void) {
+  const shopCache = new Map<string, { shopName?: string; ownerName?: string; ownerEmail?: string }>();
+
+  const sortByLatest = (items: SupportConversation[]) =>
+    [...items].sort(
+      (a, b) => (b.lastMessageAt || b.lastUpdated || 0) - (a.lastMessageAt || a.lastUpdated || 0)
+    );
+
   return onSnapshot(collection(db, 'support_conversations'), (snap) => {
-    const list: SupportConversation[] = snap.docs.map(d => ({
-      shopId: d.id,
-      ...d.data()
-    } as SupportConversation));
-    callback(list);
+    const rawList: SupportConversation[] = snap.docs.map((d) => {
+      const data = d.data() as any;
+      const shopId = data.shopId || d.id;
+      const cached = shopCache.get(shopId);
+      return {
+        shopId,
+        ...data,
+        shopName: data.shopName || cached?.shopName,
+        ownerName: data.ownerName || cached?.ownerName,
+        ownerEmail: data.ownerEmail || cached?.ownerEmail,
+        lastMessageAt: Number(data.lastMessageAt || data.lastUpdated || 0) || undefined,
+      } as SupportConversation;
+    });
+
+    const sortedList = sortByLatest(rawList);
+    callback(sortedList);
+
+    // Enrich any older conversation doc missing ownerEmail/shopName from /shops/{shopId}
+    const missingDetails = sortedList.filter(
+      (c) => (!c.ownerEmail || !c.shopName) && !shopCache.has(c.shopId)
+    );
+    if (missingDetails.length > 0) {
+      Promise.all(
+        missingDetails.map(async (c) => {
+          try {
+            const shopSnap = await getDoc(doc(db, 'shops', c.shopId));
+            if (shopSnap.exists()) {
+              const s = shopSnap.data() as any;
+              shopCache.set(c.shopId, {
+                shopName: s.shopName,
+                ownerName: s.ownerName,
+                ownerEmail: s.email,
+              });
+            } else {
+              shopCache.set(c.shopId, {});
+            }
+          } catch {
+            // Keep existing metadata
+          }
+        })
+      ).then(() => {
+        const enriched = rawList.map((c) => {
+          const cached = shopCache.get(c.shopId);
+          return {
+            ...c,
+            shopName: c.shopName || cached?.shopName,
+            ownerName: c.ownerName || cached?.ownerName,
+            ownerEmail: c.ownerEmail || cached?.ownerEmail,
+          };
+        });
+        callback(sortByLatest(enriched));
+      });
+    }
   }, (err) => console.warn('Support conversations listener:', err));
 }
 
@@ -635,10 +696,15 @@ export function subscribeToConversationMessages(shopId: string, callback: (msgs:
     limit(200)
   );
   return onSnapshot(q, (snap) => {
-    const msgs: ChatMessage[] = snap.docs.map(d => ({
-      id: d.id,
-      ...d.data()
-    } as ChatMessage));
+    const msgs: ChatMessage[] = snap.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        ...data,
+        senderRole: data.senderRole || (data.senderType === 'admin' ? 'platform_admin' : 'shop_owner'),
+        timestamp: Number(data.timestamp) || Date.now(),
+      } as ChatMessage;
+    });
     callback(msgs);
   }, (err) => console.warn('Messages listener:', err));
 }
@@ -1456,21 +1522,36 @@ export async function rejectUserRegistration(shopId: string, userUid?: string, r
 export async function sendAdminSupportMessage(shopId: string, messageText: string): Promise<boolean> {
   const now = Date.now();
   const user = auth.currentUser;
+  const cleanText = messageText.trim();
+  if (!cleanText || !shopId) return false;
 
   try {
     await addDoc(collection(db, 'support_conversations', shopId, 'messages'), {
+      conversationId: shopId,
+      shopId,
       senderUid: user?.uid || 'admin',
+      senderEmail: user?.email || '',
       senderRole: 'platform_admin',
+      senderType: 'admin',
       senderName: user?.displayName || 'Support Team',
-      messageText,
+      messageText: cleanText,
       timestamp: now,
+      serverTimestamp: serverTimestamp(),
     });
 
-    await updateDoc(doc(db, 'support_conversations', shopId), {
-      lastMessage: messageText,
-      lastMessageAt: now,
-      lastSenderRole: 'platform_admin',
-    });
+    await setDoc(
+      doc(db, 'support_conversations', shopId),
+      {
+        shopId,
+        lastMessage: cleanText,
+        lastMessageAt: now,
+        lastUpdated: now,
+        lastSenderRole: 'platform_admin',
+        status: 'open',
+        serverUpdatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
 
     return true;
   } catch (err) {

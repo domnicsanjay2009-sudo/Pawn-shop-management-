@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Search, Phone, User, MapPin, FileText, ChevronRight, Users } from 'lucide-react';
+import { Search, Phone, User, MapPin, FileText, ChevronRight, Users, Paperclip } from 'lucide-react';
 import { Party } from '../../types';
+import { MediaPreviewModal } from '../common/MediaPreviewModal';
 
 interface PartyListProps {
   parties: Party[];
@@ -16,6 +17,12 @@ export const PartyList: React.FC<PartyListProps> = ({
   const [viewMode, setViewMode] = useState<'recent' | 'all'>('recent');
   const [searchMode, setSearchMode] = useState<'name' | 'phone'>('name');
   const [searchQuery, setSearchQuery] = useState('');
+  const [previewMedia, setPreviewMedia] = useState<{
+    title: string;
+    url: string;
+    fileName?: string;
+    fileType?: string;
+  } | null>(null);
 
   // Filtering logic
   const filteredParties = parties.filter((p) => {
@@ -143,21 +150,57 @@ export const PartyList: React.FC<PartyListProps> = ({
               >
                 {/* Left: Photo / placeholder + Name & Contact */}
                 <div className="flex items-center space-x-3.5 min-w-0">
-                  {/* Photo or placeholder */}
+                  {/* Small circular thumbnail next to customer name, or default profile icon */}
                   {party.photoUrl ? (
-                    <img
-                      src={party.photoUrl}
-                      alt={party.name}
-                      className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0"
-                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewMedia({
+                          title: `${party.name} — Customer Photo`,
+                          url: party.photoUrl!,
+                          fileName: party.documentName || `${party.name}-photo.jpg`,
+                          fileType: party.documentType || 'image/jpeg',
+                        });
+                      }}
+                      title="Click to view full customer photo"
+                      className="rounded-full overflow-hidden shrink-0 border-2 border-slate-200 hover:border-accent-500 transition-colors focus:outline-none focus:ring-2 focus:ring-accent-500 cursor-zoom-in"
+                    >
+                      <img
+                        src={party.photoUrl}
+                        alt={party.name}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                    </button>
                   ) : (
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-900 to-slate-800 text-white flex items-center justify-center font-bold text-base shrink-0 shadow-xs">
-                      {party.name.charAt(0).toUpperCase()}
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex items-center justify-center shrink-0">
+                      <User className="w-5 h-5" />
                     </div>
                   )}
 
                   <div className="min-w-0">
-                    <h4 className="text-sm font-bold text-brand-950 truncate">{party.name}</h4>
+                    <div className="flex items-center space-x-2">
+                      <h4 className="text-sm font-bold text-brand-950 truncate">{party.name}</h4>
+                      {party.documentUrl && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewMedia({
+                              title: `${party.name} — Customer Document`,
+                              url: party.documentUrl!,
+                              fileName: party.documentName || 'customer-document.pdf',
+                              fileType: party.documentType || 'application/pdf',
+                            });
+                          }}
+                          title="Click to view uploaded document"
+                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-blue-50 hover:bg-blue-100 text-accent-700 text-[10px] font-semibold border border-blue-200 shrink-0 cursor-pointer"
+                        >
+                          <Paperclip className="w-2.5 h-2.5" />
+                          <span>Doc</span>
+                        </button>
+                      )}
+                    </div>
                     <div className="flex items-center space-x-3 text-xs text-slate-500 mt-0.5">
                       <span className="flex items-center space-x-1 shrink-0 font-mono">
                         <Phone className="w-3.5 h-3.5 text-slate-400" />
@@ -186,6 +229,15 @@ export const PartyList: React.FC<PartyListProps> = ({
           })
         )}
       </div>
+
+      <MediaPreviewModal
+        isOpen={!!previewMedia}
+        title={previewMedia?.title || ''}
+        url={previewMedia?.url}
+        fileName={previewMedia?.fileName}
+        fileType={previewMedia?.fileType}
+        onClose={() => setPreviewMedia(null)}
+      />
     </div>
   );
 };

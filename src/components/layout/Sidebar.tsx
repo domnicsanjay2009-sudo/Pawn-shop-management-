@@ -6,10 +6,10 @@ import {
   MessageSquare,
   Settings,
   LogOut,
-  ShieldCheck,
   X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { ShopLogoBadge } from '../common/ShopLogoBadge';
 
 export type NavigationTab =
   | 'home'
@@ -76,15 +76,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div>
           {/* Logo & App Branding */}
           <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-accent-600 flex items-center justify-center shadow-md shadow-accent-600/30">
-                <ShieldCheck className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-base font-bold tracking-tight text-white leading-tight">
-                  Pawn Shop <span className="text-accent-400 font-light">Management</span>
+            <div className="flex items-center space-x-3 min-w-0">
+              <ShopLogoBadge
+                logoUrl={shopProfile?.logoUrl}
+                shopName={shopProfile?.shopName}
+                sizeClass="w-10 h-10"
+                iconClass="w-6 h-6 text-white"
+              />
+              <div className="min-w-0">
+                <h1 className="text-base font-bold tracking-tight text-white leading-tight truncate">
+                  {shopProfile?.shopName || (
+                    <>
+                      Pawn Shop <span className="text-accent-400 font-light">Management</span>
+                    </>
+                  )}
                 </h1>
-                <p className="text-[11px] text-slate-400 font-medium">Main Application</p>
+                <p className="text-[11px] text-slate-400 font-medium truncate">
+                  Pawn Shop Management
+                </p>
               </div>
             </div>
             <button

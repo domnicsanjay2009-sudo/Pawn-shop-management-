@@ -22,7 +22,7 @@ import { PlanType, StaffPass } from '../../types';
 export const SubscriptionPlans: React.FC = () => {
   const { subscription, isPremium, hasActivePlan, upgradePlan, refreshSubscription } =
     useSubscription();
-  const { shopProfile } = useAuth();
+  const { shopProfile, profileLoading, profileError, refreshProfile } = useAuth();
   const { showToast } = useToast();
 
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
@@ -104,6 +104,39 @@ export const SubscriptionPlans: React.FC = () => {
           Transparent annual pricing built for reliable pawn shop businesses. All plans include unlimited records with data isolation.
         </p>
       </div>
+
+      {/* Shop Profile Loading / Recovery Alert (never silently blocks plan selection) */}
+      {(profileLoading || (!shopProfile && profileError)) && (
+        <div
+          className={`rounded-2xl p-4 border flex flex-col sm:flex-row items-center justify-between gap-3 ${
+            profileError
+              ? 'bg-rose-50 border-rose-200 text-rose-900'
+              : 'bg-slate-100 border-slate-200 text-slate-700'
+          }`}
+        >
+          <div className="flex items-center space-x-2.5 text-xs font-medium">
+            {profileLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-accent-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>
+              {profileLoading
+                ? 'Loading your shop profile for Razorpay checkout...'
+                : profileError || 'Shop profile could not be loaded yet.'}
+            </span>
+          </div>
+          {!profileLoading && (
+            <button
+              type="button"
+              onClick={() => refreshProfile().catch(() => {})}
+              className="px-3.5 py-1.5 rounded-lg bg-brand-950 text-white text-xs font-semibold hover:bg-slate-800 transition-colors shrink-0"
+            >
+              Retry Profile Load
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Active Subscription Banner */}
       {hasActivePlan && subscription && (

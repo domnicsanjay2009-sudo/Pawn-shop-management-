@@ -2,6 +2,8 @@ import React from 'react';
 import { Menu, Sparkles, Lock, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { useDemo } from '../../context/DemoContext';
 import { useAppLock } from '../../context/AppLockContext';
+import { useAuth } from '../../context/AuthContext';
+import { ShopLogoBadge } from '../common/ShopLogoBadge';
 
 interface HeaderProps {
   title: string;
@@ -11,6 +13,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ title, onOpenMobileSidebar }) => {
   const { isDemoMode, enterDemoMode, exitDemoMode } = useDemo();
   const { manualLock, config } = useAppLock();
+  const { shopProfile } = useAuth();
 
   const handleDemoToggle = () => {
     if (isDemoMode) {
@@ -31,6 +34,15 @@ export const Header: React.FC<HeaderProps> = ({ title, onOpenMobileSidebar }) =>
         >
           <Menu className="w-5 h-5" />
         </button>
+        {shopProfile?.logoUrl && (
+          <ShopLogoBadge
+            logoUrl={shopProfile.logoUrl}
+            shopName={shopProfile.shopName}
+            sizeClass="w-8 h-8"
+            iconClass="w-4 h-4 text-white"
+            roundedClass="rounded-lg"
+          />
+        )}
         <h2 className="text-xl font-bold text-brand-950 tracking-tight">{title}</h2>
       </div>
 

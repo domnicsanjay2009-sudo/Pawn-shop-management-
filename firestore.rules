@@ -16,12 +16,16 @@ service cloud.firestore {
       );
     }
 
-    function getUserShopId() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.shopId;
+    function hasUserProfile() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     function isShopOwner(shopId) {
-      return isAuthenticated() && (getUserShopId() == shopId || request.auth.uid == shopId.replace('shop_', ''));
+      return isAuthenticated() && shopId != null && (
+        shopId == ('shop_' + request.auth.uid) ||
+        (hasUserProfile() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.shopId == shopId) ||
+        (exists(/databases/$(database)/documents/shops/$(shopId)) && get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid == request.auth.uid)
+      );
     }
 
     function isShopBlockedOrDisabled(shopId) {
@@ -41,7 +45,7 @@ service cloud.firestore {
     // User account metadata & mapping
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isPlatformAdmin());
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isPlatformAdmin());
       allow update: if isAuthenticated() && (
         isPlatformAdmin() || (
           request.auth.uid == userId &&
@@ -53,12 +57,26 @@ service cloud.firestore {
 
     // Shop profiles (Ordinary users cannot modify their own status or unblock themselves)
     match /shops/{shopId} {
-      allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
-      allow create: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        isPlatformAdmin() ||
+        shopId == ('shop_' + request.auth.uid) ||
+        (resource != null && resource.data.ownerUid == request.auth.uid) ||
+        isShopOwner(shopId)
+      );
+      allow create: if isAuthenticated() && (
+        isPlatformAdmin() || (
+          request.resource.data.ownerUid == request.auth.uid &&
+          (shopId == ('shop_' + request.auth.uid) || isShopOwner(shopId))
+        )
+      );
       allow update: if isAuthenticated() && (
         isPlatformAdmin() || (
           isShopOwner(shopId) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'isSuspended', 'isBlocked', 'isApproved', 'blockedReason', 'suspensionReason', 'disabledReason'])
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'status', 'isSuspended', 'isBlocked', 'isApproved',
+            'blockedReason', 'suspensionReason', 'disabledReason',
+            'shopId', 'ownerUid'
+          ])
         )
       );
       allow delete: if isPlatformAdmin();
@@ -117,14 +135,46 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && isShopOwner(resource.data.shopId);
     }
 
+    function isValidCustomerMessage() {
+      return request.resource.data.senderUid == request.auth.uid &&
+        request.resource.data.senderType == 'customer' &&
+        request.resource.data.senderRole == 'shop_owner' &&
+        (!('email' in request.auth.token) || request.resource.data.senderEmail == request.auth.token.email);
+    }
+
     // Customer Care Support Conversations (Main App & Admin Panel shared contract)
     match /support_conversations/{shopId} {
       allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
-      allow create, update: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+      allow create: if isAuthenticated() && (
+        isPlatformAdmin() || (
+          isShopOwner(shopId) &&
+          request.resource.data.shopId == shopId &&
+          request.resource.data.ownerUid == request.auth.uid &&
+          (!('email' in request.auth.token) || request.resource.data.ownerEmail == request.auth.token.email)
+        )
+      );
+      allow update: if isAuthenticated() && (
+        isPlatformAdmin() || (
+          isShopOwner(shopId) &&
+          request.resource.data.shopId == shopId &&
+          (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid == request.auth.uid) &&
+          (!('email' in request.auth.token) || !('ownerEmail' in request.resource.data) || request.resource.data.ownerEmail == request.auth.token.email)
+        )
+      );
 
       match /messages/{messageId} {
         allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
-        allow create: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+        allow create: if isAuthenticated() && (
+          isPlatformAdmin() || (
+            isShopOwner(shopId) &&
+            isValidCustomerMessage() &&
+            request.resource.data.shopId == shopId &&
+            request.resource.data.conversationId == shopId &&
+            request.resource.data.messageText is string &&
+            request.resource.data.messageText.size() > 0 &&
+            request.resource.data.messageText.size() <= 4000
+          )
+        );
       }
     }
 

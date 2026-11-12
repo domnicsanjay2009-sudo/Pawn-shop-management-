@@ -25,6 +25,8 @@ import { Bar, Doughnut } from 'react-chartjs-2';
 import { Party, Bill, Payment, ClosingBill } from '../../types';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
 import { useDemo } from '../../context/DemoContext';
+import { useAuth } from '../../context/AuthContext';
+import { ShopLogoBadge } from '../common/ShopLogoBadge';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
@@ -48,6 +50,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   onOpenAddBill,
 }) => {
   const { isDemoMode } = useDemo();
+  const { shopProfile } = useAuth();
 
   // Compute real metrics strictly calculated from records as required
   const metrics = useMemo(() => {
@@ -150,6 +153,36 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
+      {/* Shop Identity Strip */}
+      {shopProfile && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-center space-x-3.5 min-w-0">
+            <ShopLogoBadge
+              logoUrl={shopProfile.logoUrl}
+              shopName={shopProfile.shopName}
+              sizeClass="w-12 h-12"
+              iconClass="w-6 h-6 text-white"
+              roundedClass="rounded-xl"
+              fallbackBgClass="bg-brand-950 shadow-xs"
+            />
+            <div className="min-w-0">
+              <h3 className="text-base sm:text-lg font-bold text-brand-950 truncate">
+                {shopProfile.shopName}
+              </h3>
+              <p className="text-xs text-slate-500 truncate">
+                Owner: <span className="font-medium text-slate-700">{shopProfile.ownerName}</span>
+                {shopProfile.phone ? ` • ${shopProfile.phone}` : ''}
+              </p>
+            </div>
+          </div>
+          {shopProfile.address && (
+            <p className="text-xs text-slate-500 sm:text-right max-w-sm truncate">
+              {shopProfile.address}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Demo Mode Notice Banner if active */}
       {isDemoMode && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between text-amber-900 shadow-xs">

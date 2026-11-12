@@ -28,12 +28,10 @@ export const AdminSupportChatView: React.FC = () => {
   useEffect(() => {
     const unsub = subscribeToSupportConversations((list) => {
       setConversations(list);
-      if (!selectedShopId && list.length > 0) {
-        setSelectedShopId(list[0].shopId);
-      }
+      setSelectedShopId((prev) => prev || (list.length > 0 ? list[0].shopId : null));
     });
     return () => unsub();
-  }, [selectedShopId]);
+  }, []);
 
   useEffect(() => {
     if (!selectedShopId) return;
@@ -90,16 +88,19 @@ export const AdminSupportChatView: React.FC = () => {
                     isSelected ? 'bg-blue-600/15 border-l-2 border-blue-500' : 'hover:bg-slate-800/40'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-white text-xs truncate max-w-[150px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-white text-xs truncate">
                       {c.shopName || c.shopId}
                     </span>
-                    {c.lastMessageAt && (
-                      <span className="text-[10px] text-slate-500">
-                        {new Date(c.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {(c.lastMessageAt || c.lastUpdated) && (
+                      <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                        {new Date(c.lastMessageAt || c.lastUpdated!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
                   </div>
+                  <p className="text-[11px] text-blue-300/90 truncate font-mono">
+                    {c.ownerEmail || c.ownerName || c.shopId}
+                  </p>
                   <p className="text-[11px] text-slate-400 truncate">
                     {c.lastMessage || 'Channel established'}
                   </p>
@@ -115,14 +116,22 @@ export const AdminSupportChatView: React.FC = () => {
         {selectedShopId ? (
           <>
             {/* Thread Header */}
-            <div className="p-4 border-b border-slate-800 bg-[#080E1C]/30 flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-white text-sm">
+            <div className="p-4 border-b border-slate-800 bg-[#080E1C]/30 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h4 className="font-bold text-white text-sm truncate">
                   {selectedConv?.shopName || selectedShopId}
                 </h4>
-                <p className="text-[11px] text-slate-400 font-mono">Channel: {selectedShopId}</p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400 mt-0.5">
+                  {selectedConv?.ownerName && (
+                    <span className="text-slate-300 font-medium">{selectedConv.ownerName}</span>
+                  )}
+                  {selectedConv?.ownerEmail && (
+                    <span className="text-blue-300 font-mono">{selectedConv.ownerEmail}</span>
+                  )}
+                  <span className="font-mono text-slate-500">ID: {selectedShopId}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 Live Desk
               </div>
@@ -136,15 +145,27 @@ export const AdminSupportChatView: React.FC = () => {
                 </div>
               ) : (
                 messages.map((m) => {
-                  const isAdmin = m.senderRole === 'platform_admin';
+                  const isAdmin = m.senderRole === 'platform_admin' || m.senderType === 'admin';
+                  const senderIdentity = isAdmin
+                    ? m.senderEmail
+                      ? `Platform Support (${m.senderEmail})`
+                      : 'Platform Support'
+                    : m.senderEmail || selectedConv?.ownerEmail
+                    ? `${m.senderName || selectedConv?.ownerName || 'Shop Owner'} (${m.senderEmail || selectedConv?.ownerEmail})`
+                    : m.senderName || 'Shop Staff';
                   return (
                     <div
                       key={m.id}
                       className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
                     >
-                      <span className="text-[10px] text-slate-500 mb-0.5 px-1">
-                        {isAdmin ? 'Platform Support' : m.senderName || 'Shop Staff'} &bull;{' '}
-                        {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <span className="text-[10px] text-slate-400 mb-0.5 px-1">
+                        {senderIdentity} &bull;{' '}
+                        {new Date(m.timestamp).toLocaleString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </span>
                       <div
                         className={`max-w-[75%] p-3 rounded-2xl text-xs leading-relaxed ${

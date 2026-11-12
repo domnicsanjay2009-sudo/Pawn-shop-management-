@@ -18,6 +18,7 @@ export interface ShopProfile {
   phone: string; // 10 digits
   address: string;
   email: string;
+  logoUrl?: string;
   status?: 'Pending' | 'Approved' | 'Disabled' | 'Blocked' | 'Suspended' | 'Rejected';
   isSuspended?: boolean;
   isBlocked?: boolean;
@@ -45,6 +46,9 @@ export interface Party {
   phone: string;
   address: string;
   photoUrl?: string;
+  documentUrl?: string;
+  documentName?: string;
+  documentType?: string;
   totalBills: number;
   createdAt: number;
   updatedAt: number;
@@ -163,20 +167,29 @@ export interface SupportMessage {
   id: string;
   conversationId: string;
   shopId: string;
+  senderUid?: string;
+  senderEmail?: string;
+  senderRole?: 'shop_owner' | 'platform_admin' | 'staff' | 'ai';
   senderType: 'customer' | 'admin' | 'ai';
   senderName: string;
   messageText: string;
   timestamp: number;
+  clientMessageId?: string;
+  deliveryStatus?: 'sending' | 'sent' | 'failed';
+  errorText?: string;
 }
 
 export interface SupportConversation {
   id: string;
   shopId: string;
+  ownerUid?: string;
   shopName: string;
   ownerName: string;
   ownerEmail: string;
   lastMessage: string;
   lastUpdated: number;
+  lastMessageAt?: number;
+  lastSenderRole?: string;
   status: 'open' | 'resolved';
 }
 

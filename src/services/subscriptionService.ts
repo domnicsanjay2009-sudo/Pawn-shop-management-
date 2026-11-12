@@ -211,7 +211,7 @@ export async function initiateRazorpayPayment(
   onError: (err: string) => void
 ): Promise<void> {
   // Offline check: Payment requires online connectivity
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     onError('Payment requires an active internet connection. Please connect to the internet to purchase or renew a subscription.');
     return;
   }

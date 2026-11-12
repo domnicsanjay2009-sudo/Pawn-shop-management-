@@ -15,22 +15,26 @@ interface SubscriptionContextType {
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { shopProfile, currentUser } = useAuth();
+  const { shopProfile, currentUser, profileError, refreshProfile } = useAuth();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshSubscription = useCallback(async () => {
-    if (!shopProfile?.shopId) {
+    const activeShopId = shopProfile?.shopId || (currentUser ? `shop_${currentUser.uid}` : null);
+    if (!activeShopId) {
       setSubscription(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    const sub = await getActiveSubscription(shopProfile.shopId);
-    setSubscription(sub);
-    setLoading(false);
-  }, [shopProfile?.shopId]);
+    try {
+      const sub = await getActiveSubscription(activeShopId);
+      setSubscription(sub);
+    } finally {
+      setLoading(false);
+    }
+  }, [shopProfile?.shopId, currentUser?.uid]);
 
   useEffect(() => {
     refreshSubscription();
@@ -49,22 +53,40 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     onDone?: () => void,
     onError?: (msg: string) => void
   ) => {
-    if (!shopProfile) {
-      onError?.('Shop profile not loaded.');
+    let activeProfile = shopProfile;
+
+    if (!activeProfile) {
+      if (!currentUser) {
+        onError?.('Please sign in to select a subscription plan.');
+        return;
+      }
+      try {
+        activeProfile = await refreshProfile();
+      } catch (err: any) {
+        onError?.(err?.message || 'Unable to load shop profile from server. Please check your connection and try again.');
+        return;
+      }
+    }
+
+    if (!activeProfile) {
+      onError?.(
+        profileError ||
+        'Unable to resolve your shop profile. Please verify your network connection and click Retry.'
+      );
       return;
     }
 
-    if (shopProfile.isBlocked || shopProfile.status === 'Blocked') {
+    if (activeProfile.isBlocked || activeProfile.status === 'Blocked') {
       onError?.('Your account has been blocked by the administrator. Subscription purchases and payments are disabled.');
       return;
     }
 
     await initiateRazorpayPayment(
-      shopProfile.shopId,
+      activeProfile.shopId,
       plan,
-      shopProfile.email,
-      shopProfile.phone,
-      shopProfile.ownerName,
+      activeProfile.email || currentUser?.email || '',
+      activeProfile.phone || '',
+      activeProfile.ownerName || '',
       (sub) => {
         setSubscription(sub);
         onDone?.();

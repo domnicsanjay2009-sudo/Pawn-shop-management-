@@ -12,11 +12,14 @@ import {
   ArrowRight,
   TrendingUp,
   Percent,
-  Clock
+  Clock,
+  User,
+  Paperclip
 } from 'lucide-react';
 import { Party, Bill, Payment, ClosingBill } from '../../types';
 import { formatCurrencyPaise, formatDate, formatDateTime } from '../../utils/formatters';
 import { evaluateBillStatus } from '../../utils/calculations';
+import { MediaPreviewModal } from '../common/MediaPreviewModal';
 
 interface PartyDetailViewProps {
   party: Party;
@@ -51,6 +54,12 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
 }) => {
   const [filter, setFilter] = useState<ActivityFilter>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [previewMedia, setPreviewMedia] = useState<{
+    title: string;
+    url: string;
+    fileName?: string;
+    fileType?: string;
+  } | null>(null);
 
   // 1. Filter records strictly belonging to this party
   const partyBills = useMemo(() => bills.filter((b) => b.partyId === party.id), [bills, party.id]);
@@ -158,14 +167,28 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pr-8">
           <div className="flex items-center space-x-4">
             {party.photoUrl ? (
-              <img
-                src={party.photoUrl}
-                alt={party.name}
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-accent-500/50 shadow-md"
-              />
+              <button
+                type="button"
+                onClick={() =>
+                  setPreviewMedia({
+                    title: `${party.name} — Customer Photo`,
+                    url: party.photoUrl!,
+                    fileName: party.documentName || `${party.name}-photo.jpg`,
+                    fileType: party.documentType || 'image/jpeg',
+                  })
+                }
+                title="Click to inspect full customer photo"
+                className="rounded-full overflow-hidden border-2 border-accent-500/60 hover:border-white transition-colors shadow-md shrink-0 cursor-zoom-in"
+              >
+                <img
+                  src={party.photoUrl}
+                  alt={party.name}
+                  className="w-16 h-16 rounded-full object-cover"
+                />
+              </button>
             ) : (
-              <div className="w-16 h-16 rounded-2xl bg-accent-600 text-white flex items-center justify-center font-bold text-2xl shadow-md">
-                {party.name.charAt(0).toUpperCase()}
+              <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 text-slate-200 flex items-center justify-center shadow-md shrink-0">
+                <User className="w-8 h-8" />
               </div>
             )}
             <div>
@@ -218,6 +241,23 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
             >
               <CreditCard className="w-4 h-4" />
               <span>Record Payment</span>
+            </button>
+          )}
+          {(party.photoUrl || party.documentUrl) && (
+            <button
+              type="button"
+              onClick={() =>
+                setPreviewMedia({
+                  title: `${party.name} — ${party.documentUrl ? 'Uploaded Document' : 'Customer Photo'}`,
+                  url: (party.documentUrl || party.photoUrl)!,
+                  fileName: party.documentName || (party.documentUrl ? 'document.pdf' : `${party.name}-photo.jpg`),
+                  fileType: party.documentType || (party.documentUrl ? 'application/pdf' : 'image/jpeg'),
+                })
+              }
+              className="flex items-center space-x-2 px-3.5 py-2 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-semibold border border-white/15 transition-colors cursor-pointer"
+            >
+              <Paperclip className="w-4 h-4" />
+              <span>{party.documentUrl ? 'View Uploaded Document' : 'View Photo'}</span>
             </button>
           )}
         </div>
@@ -420,6 +460,15 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
           })
         )}
       </div>
+
+      <MediaPreviewModal
+        isOpen={!!previewMedia}
+        title={previewMedia?.title || ''}
+        url={previewMedia?.url}
+        fileName={previewMedia?.fileName}
+        fileType={previewMedia?.fileType}
+        onClose={() => setPreviewMedia(null)}
+      />
     </div>
   );
 };
