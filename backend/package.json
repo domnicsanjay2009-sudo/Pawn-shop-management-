@@ -1,0 +1,21 @@
+{
+  "name": "pawn-shop-management-backend",
+  "version": "1.0.0",
+  "description": "Free standalone backend for Pawn Shop Management (Razorpay + Webhooks + Gemini Support)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^18.0.9",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.0",
+    "razorpay": "^2.9.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

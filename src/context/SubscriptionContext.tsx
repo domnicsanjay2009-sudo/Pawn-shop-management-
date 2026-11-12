@@ -1,0 +1,98 @@
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useAuth } from './AuthContext';
+import { Subscription, PlanType } from '../types';
+import { getActiveSubscription, initiateRazorpayPayment } from '../services/subscriptionService';
+
+interface SubscriptionContextType {
+  subscription: Subscription | null;
+  isPremium: boolean;
+  hasActivePlan: boolean;
+  loading: boolean;
+  upgradePlan: (plan: PlanType, onDone?: () => void, onError?: (msg: string) => void) => Promise<void>;
+  refreshSubscription: () => Promise<void>;
+}
+
+const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
+
+export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { shopProfile, currentUser } = useAuth();
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refreshSubscription = useCallback(async () => {
+    if (!shopProfile?.shopId) {
+      setSubscription(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const sub = await getActiveSubscription(shopProfile.shopId);
+    setSubscription(sub);
+    setLoading(false);
+  }, [shopProfile?.shopId]);
+
+  useEffect(() => {
+    refreshSubscription();
+  }, [refreshSubscription]);
+
+  const hasActivePlan = !!(subscription && subscription.status === 'Approved' && subscription.expiryDate > Date.now());
+  const isPremium = hasActivePlan && (
+    subscription?.plan === 'Yearly Premium' ||
+    subscription?.plan === 'Complimentary Premium' ||
+    subscription?.entitlementSource === 'ADMIN_GRANTED' ||
+    subscription?.entitlementSource === 'COMPLIMENTARY'
+  );
+
+  const upgradePlan = async (
+    plan: PlanType,
+    onDone?: () => void,
+    onError?: (msg: string) => void
+  ) => {
+    if (!shopProfile) {
+      onError?.('Shop profile not loaded.');
+      return;
+    }
+
+    if (shopProfile.isBlocked || shopProfile.status === 'Blocked') {
+      onError?.('Your account has been blocked by the administrator. Subscription purchases and payments are disabled.');
+      return;
+    }
+
+    await initiateRazorpayPayment(
+      shopProfile.shopId,
+      plan,
+      shopProfile.email,
+      shopProfile.phone,
+      shopProfile.ownerName,
+      (sub) => {
+        setSubscription(sub);
+        onDone?.();
+      },
+      (err) => {
+        onError?.(err);
+      }
+    );
+  };
+
+  return (
+    <SubscriptionContext.Provider
+      value={{
+        subscription,
+        isPremium,
+        hasActivePlan,
+        loading,
+        upgradePlan,
+        refreshSubscription,
+      }}
+    >
+      {children}
+    </SubscriptionContext.Provider>
+  );
+};
+
+export const useSubscription = () => {
+  const context = useContext(SubscriptionContext);
+  if (!context) throw new Error('useSubscription must be used within SubscriptionProvider');
+  return context;
+};

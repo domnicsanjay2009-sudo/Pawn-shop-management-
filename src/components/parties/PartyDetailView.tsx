@@ -1,0 +1,425 @@
+import React, { useState, useMemo } from 'react';
+import {
+  Phone,
+  MapPin,
+  FileText,
+  CreditCard,
+  CheckCircle,
+  Plus,
+  Search,
+  Calendar,
+  X,
+  ArrowRight,
+  TrendingUp,
+  Percent,
+  Clock
+} from 'lucide-react';
+import { Party, Bill, Payment, ClosingBill } from '../../types';
+import { formatCurrencyPaise, formatDate, formatDateTime } from '../../utils/formatters';
+import { evaluateBillStatus } from '../../utils/calculations';
+
+interface PartyDetailViewProps {
+  party: Party;
+  bills: Bill[];
+  payments: Payment[];
+  closingBills: ClosingBill[];
+  onClose: () => void;
+  onOpenAddBill: (party: Party) => void;
+  onOpenPayment: (party: Party, bill?: Bill) => void;
+  onOpenCloseBill: (party: Party, bill: Bill) => void;
+}
+
+type ActivityFilter = 'All' | 'Bills' | 'Payments' | 'Closing Bills';
+
+interface CombinedActivityItem {
+  id: string;
+  type: 'bill' | 'payment' | 'closing';
+  timestamp: number;
+  dateStr: string;
+  data: Bill | Payment | ClosingBill;
+}
+
+export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
+  party,
+  bills,
+  payments,
+  closingBills,
+  onClose,
+  onOpenAddBill,
+  onOpenPayment,
+  onOpenCloseBill,
+}) => {
+  const [filter, setFilter] = useState<ActivityFilter>('All');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // 1. Filter records strictly belonging to this party
+  const partyBills = useMemo(() => bills.filter((b) => b.partyId === party.id), [bills, party.id]);
+  const partyPayments = useMemo(() => payments.filter((p) => p.partyId === party.id), [payments, party.id]);
+  const partyClosingBills = useMemo(() => closingBills.filter((c) => c.partyId === party.id), [closingBills, party.id]);
+
+  // Aggregate metrics for header
+  const activeBills = partyBills.filter((b) => b.status === 'Active');
+  const totalPawnedPrincipalPaise = activeBills.reduce((acc, b) => acc + (b.currentPrincipalPaise || 0), 0);
+
+  // 2. Build Combined Activity Stream
+  const combinedStream = useMemo<CombinedActivityItem[]>(() => {
+    const stream: CombinedActivityItem[] = [];
+
+    partyBills.forEach((bill) => {
+      stream.push({
+        id: `b_${bill.id}`,
+        type: 'bill',
+        timestamp: bill.createdAt,
+        dateStr: bill.billDate,
+        data: bill,
+      });
+    });
+
+    partyPayments.forEach((payment) => {
+      stream.push({
+        id: `p_${payment.id}`,
+        type: 'payment',
+        timestamp: payment.createdAt,
+        dateStr: payment.paymentDate,
+        data: payment,
+      });
+    });
+
+    partyClosingBills.forEach((closing) => {
+      stream.push({
+        id: `c_${closing.id}`,
+        type: 'closing',
+        timestamp: closing.closedAt,
+        dateStr: closing.closingDate,
+        data: closing,
+      });
+    });
+
+    // Sort strictly latest to oldest as required
+    return stream.sort((a, b) => b.timestamp - a.timestamp);
+  }, [partyBills, partyPayments, partyClosingBills]);
+
+  // 3. Apply tab filter & search
+  const filteredActivities = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+
+    return combinedStream.filter((item) => {
+      // Tab filter
+      if (filter === 'Bills' && item.type !== 'bill') return false;
+      if (filter === 'Payments' && item.type !== 'payment') return false;
+      if (filter === 'Closing Bills' && item.type !== 'closing') return false;
+
+      // Search filter
+      if (!q) return true;
+
+      if (item.type === 'bill') {
+        const b = item.data as Bill;
+        return (
+          b.billNumber.toLowerCase().includes(q) ||
+          b.itemCategory.toLowerCase().includes(q) ||
+          b.itemDescription.toLowerCase().includes(q) ||
+          (b.purity && b.purity.toLowerCase().includes(q))
+        );
+      } else if (item.type === 'payment') {
+        const p = item.data as Payment;
+        const amtStr = (p.amountPaise / 100).toString();
+        return (
+          p.billNumber.toLowerCase().includes(q) ||
+          p.paymentMode.toLowerCase().includes(q) ||
+          amtStr.includes(q) ||
+          (p.notes && p.notes.toLowerCase().includes(q))
+        );
+      } else if (item.type === 'closing') {
+        const c = item.data as ClosingBill;
+        const amtStr = (c.finalSettlementAmountPaise / 100).toString();
+        return (
+          c.billNumber.toLowerCase().includes(q) ||
+          c.paymentMode.toLowerCase().includes(q) ||
+          amtStr.includes(q) ||
+          (c.notes && c.notes.toLowerCase().includes(q))
+        );
+      }
+
+      return true;
+    });
+  }, [combinedStream, filter, searchQuery]);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden animate-fadeIn flex flex-col h-full">
+      {/* Top Header Card */}
+      <div className="bg-gradient-to-r from-brand-950 via-brand-900 to-slate-900 text-white p-6 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pr-8">
+          <div className="flex items-center space-x-4">
+            {party.photoUrl ? (
+              <img
+                src={party.photoUrl}
+                alt={party.name}
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-accent-500/50 shadow-md"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-accent-600 text-white flex items-center justify-center font-bold text-2xl shadow-md">
+                {party.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-xl font-bold text-white">{party.name}</h3>
+                <span className="text-[11px] bg-accent-600/30 text-accent-300 font-semibold px-2 py-0.5 rounded-full border border-accent-500/30">
+                  Customer
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-1">
+                <span className="flex items-center space-x-1 font-mono">
+                  <Phone className="w-3.5 h-3.5 text-accent-400" />
+                  <span>{party.phone}</span>
+                </span>
+                <span className="flex items-center space-x-1">
+                  <MapPin className="w-3.5 h-3.5 text-accent-400" />
+                  <span>{party.address}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Summary Pill */}
+          <div className="bg-white/10 backdrop-blur-xs rounded-xl p-3 border border-white/10 sm:text-right">
+            <p className="text-[11px] uppercase tracking-wider text-slate-300 font-semibold">
+              Active Pawn Balance
+            </p>
+            <p className="text-xl font-extrabold text-accent-400">
+              {formatCurrencyPaise(totalPawnedPrincipalPaise)}
+            </p>
+            <p className="text-[11px] text-slate-300 mt-0.5">
+              {activeBills.length} Active {activeBills.length === 1 ? 'Bill' : 'Bills'}
+            </p>
+          </div>
+        </div>
+
+        {/* Action Shortcuts */}
+        <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap gap-2.5">
+          <button
+            onClick={() => onOpenAddBill(party)}
+            className="flex items-center space-x-2 px-3.5 py-2 bg-accent-600 hover:bg-accent-500 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Pledge Bill</span>
+          </button>
+          {activeBills.length > 0 && (
+            <button
+              onClick={() => onOpenPayment(party)}
+              className="flex items-center space-x-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>Record Payment</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Filters: All, Bills, Payments, Closing Bills */}
+        <div className="flex rounded-xl bg-white border border-slate-200 p-0.5 text-xs font-semibold shrink-0">
+          {(['All', 'Bills', 'Payments', 'Closing Bills'] as ActivityFilter[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setFilter(tab)}
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                filter === tab ? 'bg-brand-900 text-white' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* In-view Search control beside filters */}
+        <div className="relative flex-1 max-w-sm">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={`Search within ${filter}...`}
+            className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-accent-500"
+          />
+        </div>
+      </div>
+
+      {/* Activity Stream List (Latest to Oldest) */}
+      <div className="flex-1 p-5 overflow-y-auto space-y-3.5 bg-slate-50/40">
+        {filteredActivities.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">
+            <Clock className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm font-medium">No activity records found matching filters</p>
+          </div>
+        ) : (
+          filteredActivities.map((item) => {
+            if (item.type === 'bill') {
+              const bill = item.data as Bill;
+              const finStatus = evaluateBillStatus(bill);
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-accent-300 transition-all"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start space-x-3">
+                      <div className="w-9 h-9 rounded-lg bg-blue-50 text-accent-600 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-brand-950 font-mono text-sm">
+                            {bill.billNumber}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              bill.status === 'Active'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}
+                          >
+                            {bill.status}
+                          </span>
+                          <span className="text-xs bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md font-semibold">
+                            {bill.itemCategory}
+                          </span>
+                        </div>
+                        <p className="text-xs font-medium text-slate-700 mt-1">
+                          {bill.itemDescription}
+                        </p>
+                        <div className="flex items-center space-x-4 text-xs text-slate-500 mt-1.5">
+                          <span>
+                            Gross: {bill.grossWeight} {bill.weightUnit} | Net: {bill.netWeight}{' '}
+                            {bill.weightUnit}
+                          </span>
+                          <span>•</span>
+                          <span>Date: {formatDate(bill.billDate)}</span>
+                          <span>•</span>
+                          <span>
+                            Rate: {bill.interestPercentage}% / {bill.interestDuration}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0 pl-3">
+                      <p className="text-xs text-slate-400 font-semibold uppercase">Principal</p>
+                      <p className="text-sm font-bold text-brand-950">
+                        {formatCurrencyPaise(bill.principalPaise)}
+                      </p>
+                      {bill.status === 'Active' && (
+                        <div className="mt-1">
+                          <span className="text-[11px] font-semibold text-accent-600">
+                            + {formatCurrencyPaise(finStatus.accruedInterestPaise)} interest
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions for Active Bill */}
+                  {bill.status === 'Active' && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                      <button
+                        onClick={() => onOpenPayment(party, bill)}
+                        className="px-3 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                      >
+                        Add Payment
+                      </button>
+                      <button
+                        onClick={() => onOpenCloseBill(party, bill)}
+                        className="px-3 py-1 bg-slate-100 hover:bg-brand-900 hover:text-white text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                      >
+                        Close Bill
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            } else if (item.type === 'payment') {
+              const payment = item.data as Payment;
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs shrink-0">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-bold text-brand-950">
+                          Payment for {payment.billNumber}
+                        </span>
+                        <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-medium">
+                          {payment.paymentMode}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        <span>Date: {formatDate(payment.paymentDate)}</span>
+                        {payment.notes && <span className="ml-2 italic text-slate-400">"{payment.notes}"</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-emerald-600">
+                      + {formatCurrencyPaise(payment.amountPaise)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Interest: {formatCurrencyPaise(payment.interestPortionPaise)} | Principal: {formatCurrencyPaise(payment.principalPortionPaise)}
+                    </p>
+                  </div>
+                </div>
+              );
+            } else {
+              const closing = item.data as ClosingBill;
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between bg-slate-50/50"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-lg bg-slate-800 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                      <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-bold text-brand-950">
+                          Bill Closed: {closing.billNumber}
+                        </span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                          Settled
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Closing Date: {formatDate(closing.closingDate)} via {closing.paymentMode}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-brand-950">
+                      {formatCurrencyPaise(closing.finalSettlementAmountPaise)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Final Settlement</p>
+                  </div>
+                </div>
+              );
+            }
+          })
+        )}
+      </div>
+    </div>
+  );
+};

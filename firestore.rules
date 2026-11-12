@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isPlatformAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'global_admin' ||
+        request.auth.token.email == 'domnicsanjay2009@gmail.com' ||
+        request.auth.uid == 'PbDMTp8ROrXRaQWUfJ2tvjdlIGC3' ||
+        exists(/databases/$(database)/documents/platform_admins/$(request.auth.uid))
+      );
+    }
+
+    function getUserShopId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.shopId;
+    }
+
+    function isShopOwner(shopId) {
+      return isAuthenticated() && (getUserShopId() == shopId || request.auth.uid == shopId.replace('shop_', ''));
+    }
+
+    function isShopBlockedOrDisabled(shopId) {
+      return exists(/databases/$(database)/documents/shops/$(shopId)) && (
+        get(/databases/$(database)/documents/shops/$(shopId)).data.status in ['Blocked', 'BLOCKED', 'Disabled', 'DISABLED'] ||
+        get(/databases/$(database)/documents/shops/$(shopId)).data.isBlocked == true ||
+        get(/databases/$(database)/documents/shops/$(shopId)).data.isSuspended == true
+      );
+    }
+
+    // Platform Admins Registry
+    match /platform_admins/{adminUid} {
+      allow read: if isAuthenticated();
+      allow write: if isPlatformAdmin();
+    }
+
+    // User account metadata & mapping
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isPlatformAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isPlatformAdmin() || (
+          request.auth.uid == userId &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'isBlocked', 'isSuspended', 'isApproved'])
+        )
+      );
+      allow delete: if isPlatformAdmin();
+    }
+
+    // Shop profiles (Ordinary users cannot modify their own status or unblock themselves)
+    match /shops/{shopId} {
+      allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isPlatformAdmin() || (
+          isShopOwner(shopId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'isSuspended', 'isBlocked', 'isApproved', 'blockedReason', 'suspensionReason', 'disabledReason'])
+        )
+      );
+      allow delete: if isPlatformAdmin();
+    }
+
+    // App Settings
+    match /settings/{shopId} {
+      allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+      allow write: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+    }
+
+    // Parties / Customers (Strict shop-level isolation)
+    match /parties/{partyId} {
+      allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
+      allow create: if isAuthenticated() && isShopOwner(request.resource.data.shopId);
+      allow update: if isAuthenticated() && isShopOwner(resource.data.shopId) && isShopOwner(request.resource.data.shopId);
+      allow delete: if isAuthenticated() && isShopOwner(resource.data.shopId);
+    }
+
+    // Pledge Bills (Financial Records with data isolation)
+    match /bills/{billId} {
+      allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
+      allow create: if isAuthenticated() && isShopOwner(request.resource.data.shopId);
+      allow update: if isAuthenticated() && isShopOwner(resource.data.shopId) && isShopOwner(request.resource.data.shopId);
+      allow delete: if false; // Financial records cannot be deleted directly
+    }
+
+    // Payments (Audit history)
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
+      allow create: if isAuthenticated() && isShopOwner(request.resource.data.shopId);
+      allow update, delete: if false; // Immutable audit ledger
+    }
+
+    // Closing Bills (Audit history)
+    match /closing_bills/{closingId} {
+      allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
+      allow create: if isAuthenticated() && isShopOwner(request.resource.data.shopId);
+      allow update, delete: if false; // Immutable audit ledger
+    }
+
+    // Subscriptions (Client cannot self-grant 'Approved' or change tier without server verification)
+    match /subscriptions/{shopId} {
+      allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+      allow write: if isPlatformAdmin(); // Activated strictly via Cloud Functions / Admin backend
+    }
+
+    match /payment_transactions/{txId} {
+      allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
+      allow write: if isPlatformAdmin();
+    }
+
+    // Temporary Staff Passes (90-day tokens)
+    match /staff_passes/{passId} {
+      allow read, create, update: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
+      allow delete: if isAuthenticated() && isShopOwner(resource.data.shopId);
+    }
+
+    // Customer Care Support Conversations (Main App & Admin Panel shared contract)
+    match /support_conversations/{shopId} {
+      allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+      allow create, update: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+        allow create: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
+      }
+    }
+
+    // User Devices (Permanent device records per user/shop)
+    match /user_devices/{deviceId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.user_uid || isPlatformAdmin());
+      allow create: if isAuthenticated() && (request.auth.uid == request.resource.data.user_uid || isPlatformAdmin());
+      allow update: if isAuthenticated() && (
+        isPlatformAdmin() ||
+        (request.auth.uid == resource.data.user_uid && resource.data.device_status != 'revoked')
+      );
+      allow delete: if isPlatformAdmin();
+    }
+
+    // User Sessions (Device login sessions & heartbeats; blocked accounts cannot create sessions)
+    match /user_sessions/{sessionId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.user_uid || isPlatformAdmin());
+      allow create: if isAuthenticated() && (
+        isPlatformAdmin() || (
+          request.auth.uid == request.resource.data.user_uid &&
+          !isShopBlockedOrDisabled(request.resource.data.shop_id)
+        )
+      );
+      allow update: if isAuthenticated() && (
+        isPlatformAdmin() || (
+          request.auth.uid == resource.data.user_uid &&
+          resource.data.session_status != 'revoked' &&
+          !isShopBlockedOrDisabled(resource.data.shop_id)
+        )
+      );
+      allow delete: if isPlatformAdmin();
+    }
+
+    // Device Activity Logs (Logins, logouts, heartbeats, revocations)
+    match /device_activity_logs/{logId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.user_uid || isPlatformAdmin());
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // Immutable ledger
+    }
+
+    // Admin Audit Logs (Administrative actions)
+    match /admin_audit_logs/{auditId} {
+      allow read: if isPlatformAdmin();
+      allow create: if isPlatformAdmin();
+      allow update, delete: if false; // Immutable ledger
+    }
+
+    // System Audit Logs
+    match /audit_logs/{logId} {
+      allow read: if isPlatformAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+  }
+}
