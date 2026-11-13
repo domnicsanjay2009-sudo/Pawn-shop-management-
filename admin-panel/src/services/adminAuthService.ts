@@ -7,7 +7,6 @@ import {
   sendPasswordResetEmail,
   verifyPasswordResetCode,
   confirmPasswordReset,
-  updatePassword,
   ActionCodeSettings
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -47,15 +46,15 @@ const getEnvVar = (key: string): string | undefined => {
 
 /**
  * STRICT SINGLE-USER ACCESS CONFIGURATION
- * Checks VITE_ADMIN_EMAIL, ADMIN_EMAIL, and falls back to domnicsanjay2009@gmail.com.
- * Checks VITE_ADMIN_PASSWORD, ADMIN_PASSWORD, and falls back to sanjay0920.
+ * Sole authorized administrator email for this system is dominicsanjay2009@gmail.com.
+ * Checks VITE_ADMIN_EMAIL, ADMIN_EMAIL, and falls back to dominicsanjay2009@gmail.com.
  * All other logins, registrations, and account creations are prohibited.
  */
 export const ENFORCED_ADMIN_EMAIL =
   getEnvVar('VITE_ADMIN_EMAIL') ||
   getEnvVar('ADMIN_EMAIL') ||
   getEnvVar('ADMIN EMAIL') ||
-  'domnicsanjay2009@gmail.com';
+  'dominicsanjay2009@gmail.com';
 
 export const ENFORCED_ADMIN_PASSWORD =
   getEnvVar('VITE_ADMIN_PASSWORD') ||
@@ -64,6 +63,22 @@ export const ENFORCED_ADMIN_PASSWORD =
   'sanjay0920';
 
 export const ALLOW_ADMIN_REGISTRATION = false;
+
+/**
+ * Validates whether an email address is authorized as the platform administrator.
+ * Accepts the canonical 'dominicsanjay2009@gmail.com', alternative spelling 'domnicsanjay2009@gmail.com',
+ * and any email provided via VITE_ADMIN_EMAIL or ADMIN_EMAIL environment variables.
+ */
+export function isAuthorizedAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  const configuredEmail = ENFORCED_ADMIN_EMAIL.toLowerCase();
+  return (
+    normalized === configuredEmail ||
+    normalized === 'dominicsanjay2009@gmail.com' ||
+    normalized === 'domnicsanjay2009@gmail.com'
+  );
+}
 
 /**
  * In-session cache for newly updated administrator passwords (e.g. after a password reset).
@@ -99,7 +114,7 @@ export async function verifyAdminStatus(user: User): Promise<boolean> {
   try {
     // 1. Strict Single-User Check: Only the designated email address is allowed
     const userEmail = (user.email || '').trim().toLowerCase();
-    if (userEmail !== ENFORCED_ADMIN_EMAIL.toLowerCase()) {
+    if (!isAuthorizedAdminEmail(userEmail)) {
       console.warn(`[Security Alert] Access denied for ${user.email}: Only ${ENFORCED_ADMIN_EMAIL} is authorized.`);
       return false;
     }
@@ -111,9 +126,9 @@ export async function verifyAdminStatus(user: User): Promise<boolean> {
       if (!adminDocSnap.exists()) {
         await setDoc(adminDocRef, {
           admin_id: user.uid,
-          email: ENFORCED_ADMIN_EMAIL,
+          email: user.email || ENFORCED_ADMIN_EMAIL,
           role: 'global_admin',
-          displayName: 'Platform Administrator',
+          displayName: user.displayName || 'Platform Administrator',
           created_at: Date.now(),
           single_admin_enforced: true
         }, { merge: true });
@@ -126,15 +141,14 @@ export async function verifyAdminStatus(user: User): Promise<boolean> {
     return true;
   } catch (err) {
     console.error('Error verifying admin status:', err);
-    return (user.email || '').trim().toLowerCase() === ENFORCED_ADMIN_EMAIL.toLowerCase();
+    return isAuthorizedAdminEmail(user.email);
   }
 }
 
 /**
- * Log into the companion Admin Panel.
- * Enforces strict single-user credentials (matches ENFORCED_ADMIN_EMAIL).
- * Rejects all unauthorized users immediately.
- * Supports credentials updated via Forgot Password or environment variables.
+ * Log into the companion Admin Panel directly using Firebase Authentication.
+ * Strictly enforces single-user access: only dominicsanjay2009@gmail.com is authorized.
+ * Removes hardcoded password checks and authenticates directly against Firebase Auth.
  */
 export async function loginAdmin(email: string, pass: string): Promise<{
   success: boolean;
@@ -142,73 +156,53 @@ export async function loginAdmin(email: string, pass: string): Promise<{
   error?: string;
 }> {
   const normalizedEmail = (email || '').trim().toLowerCase();
-  const targetEmail = ENFORCED_ADMIN_EMAIL.toLowerCase();
 
-  // 1. Strict single-user check: Reject ANY email other than the enforced default admin
-  if (normalizedEmail !== targetEmail) {
+  // 1. Strict single-user check: Reject ANY email other than the authorized platform administrator
+  if (!isAuthorizedAdminEmail(normalizedEmail)) {
     return {
       success: false,
       error: `Access denied: Only the designated platform administrator (${ENFORCED_ADMIN_EMAIL}) is permitted to access this panel.`
     };
   }
 
-  const effectivePassword = getEffectiveAdminPassword();
+  if (!pass) {
+    return {
+      success: false,
+      error: 'Please enter your administrator password.'
+    };
+  }
 
   try {
     let cred;
     try {
-      // First attempt: try authenticating with the entered password directly in Firebase Auth
-      cred = await signInWithEmailAndPassword(auth, ENFORCED_ADMIN_EMAIL, pass);
+      // Direct Firebase Authentication: signInWithEmailAndPassword
+      cred = await signInWithEmailAndPassword(auth, normalizedEmail, pass);
     } catch (authErr: any) {
-      const isAuthFail =
-        authErr.code === 'auth/invalid-credential' ||
-        authErr.code === 'auth/wrong-password' ||
-        authErr.code === 'auth/user-not-found';
-
-      if (isAuthFail) {
-        // If user account is not found in Firebase Auth yet, auto-initialize if entered password matches configured password
-        if (authErr.code === 'auth/user-not-found') {
-          if (pass === effectivePassword || pass === ENFORCED_ADMIN_PASSWORD || pass === 'sanjay0920') {
-            try {
-              cred = await createUserWithEmailAndPassword(auth, ENFORCED_ADMIN_EMAIL, pass);
-            } catch {
-              throw authErr;
-            }
-          } else {
-            return {
-              success: false,
-              error: 'Invalid administrator credentials. Access restricted.'
-            };
-          }
-        } else if (pass === effectivePassword || pass === ENFORCED_ADMIN_PASSWORD) {
-          // If pass matches the configured environment password, but Firebase Auth has an older seed password (e.g. sanjay0920):
-          // Sign in with the seed password and synchronize Firebase Auth to the configured password
-          if (pass !== 'sanjay0920') {
-            try {
-              const fallbackCred = await signInWithEmailAndPassword(auth, ENFORCED_ADMIN_EMAIL, 'sanjay0920');
-              await updatePassword(fallbackCred.user, pass);
-              cred = fallbackCred;
-            } catch {
-              throw authErr;
-            }
-          } else {
-            throw authErr;
-          }
-        } else {
-          return {
-            success: false,
-            error: 'Invalid administrator credentials. Access restricted.'
-          };
+      // If the admin account does not exist in Firebase Auth yet, auto-create it on initial setup
+      if (authErr.code === 'auth/user-not-found') {
+        try {
+          cred = await createUserWithEmailAndPassword(auth, normalizedEmail, pass);
+        } catch {
+          throw authErr;
         }
       } else {
         throw authErr;
       }
     }
 
-    if (!cred) {
+    if (!cred || !cred.user) {
       return {
         success: false,
         error: 'Invalid administrator credentials. Access restricted.'
+      };
+    }
+
+    // Strict Role Enforcement post-authentication
+    if (!isAuthorizedAdminEmail(cred.user.email)) {
+      await signOut(auth);
+      return {
+        success: false,
+        error: `Access denied: Account is not authorized as the single platform administrator.`
       };
     }
 
@@ -230,21 +224,27 @@ export async function loginAdmin(email: string, pass: string): Promise<{
       email: cred.user.email,
       displayName: cred.user.displayName || 'Platform Administrator',
       role: 'global_admin',
-      token,
+      token
     };
 
-    return { success: true, admin: adminUser };
+    return {
+      success: true,
+      admin: adminUser
+    };
   } catch (err: any) {
-    console.error('Admin login error:', err);
+    console.error('Admin authentication error:', err);
     let msg = 'Authentication failed. Please verify your credentials.';
     if (
       err.code === 'auth/invalid-credential' ||
-      err.code === 'auth/wrong-password' ||
-      err.code === 'auth/user-not-found'
+      err.code === 'auth/wrong-password'
     ) {
-      msg = 'Invalid administrator credentials.';
+      msg = 'Incorrect administrator password. Please try again or click "Forgot Password?" to reset.';
+    } else if (err.code === 'auth/user-not-found') {
+      msg = 'Administrator account not found in Firebase Authentication.';
     } else if (err.code === 'auth/too-many-requests') {
-      msg = 'Too many failed login attempts. Please wait a few moments and try again.';
+      msg = 'Too many failed login attempts. Please wait a few moments and try again, or reset your password.';
+    } else if (err.code === 'auth/network-request-failed') {
+      msg = 'Network connection error. Please check your internet connection.';
     }
     return { success: false, error: msg };
   }
@@ -261,8 +261,8 @@ export async function sendAdminPasswordReset(email?: string): Promise<{
 }> {
   const targetEmail = (email || ENFORCED_ADMIN_EMAIL).trim();
 
-  // Strict Single-User Check: Only the enforced admin email is allowed
-  if (targetEmail.toLowerCase() !== ENFORCED_ADMIN_EMAIL.toLowerCase()) {
+  // Strict Single-User Check: Only the authorized admin email is allowed
+  if (!isAuthorizedAdminEmail(targetEmail)) {
     return {
       success: false,
       error: `Password reset is restricted. Only the designated platform administrator (${ENFORCED_ADMIN_EMAIL}) can request a reset link.`
@@ -281,13 +281,13 @@ export async function sendAdminPasswordReset(email?: string): Promise<{
     };
 
     try {
-      await sendPasswordResetEmail(auth, ENFORCED_ADMIN_EMAIL, actionCodeSettings);
+      await sendPasswordResetEmail(auth, targetEmail, actionCodeSettings);
     } catch (sendErr: any) {
       // If user does not exist in Firebase Auth yet, initialize the user first and retry
       if (sendErr.code === 'auth/user-not-found') {
         try {
-          await createUserWithEmailAndPassword(auth, ENFORCED_ADMIN_EMAIL, ENFORCED_ADMIN_PASSWORD);
-          await sendPasswordResetEmail(auth, ENFORCED_ADMIN_EMAIL, actionCodeSettings);
+          await createUserWithEmailAndPassword(auth, targetEmail, ENFORCED_ADMIN_PASSWORD);
+          await sendPasswordResetEmail(auth, targetEmail, actionCodeSettings);
         } catch {
           throw sendErr;
         }
@@ -298,7 +298,7 @@ export async function sendAdminPasswordReset(email?: string): Promise<{
 
     return {
       success: true,
-      message: `Password reset link sent to ${ENFORCED_ADMIN_EMAIL}. Please check your inbox and click the link to reset your password.`
+      message: `Password reset link sent to ${targetEmail}. Please check your inbox and click the link to reset your password.`
     };
   } catch (err: any) {
     console.error('Password reset email error:', err);
@@ -317,7 +317,7 @@ export async function sendAdminPasswordReset(email?: string): Promise<{
 
 /**
  * Verifies a password reset code (oobCode) returned by the Firebase Auth action link.
- * Ensures the code is valid, unexpired, and issued strictly to ENFORCED_ADMIN_EMAIL.
+ * Ensures the code is valid, unexpired, and issued strictly to the authorized admin email.
  */
 export async function verifyAdminPasswordResetCode(oobCode: string): Promise<{
   success: boolean;
@@ -330,7 +330,7 @@ export async function verifyAdminPasswordResetCode(oobCode: string): Promise<{
 
   try {
     const email = await verifyPasswordResetCode(auth, oobCode.trim());
-    if (email.toLowerCase() !== ENFORCED_ADMIN_EMAIL.toLowerCase()) {
+    if (!isAuthorizedAdminEmail(email)) {
       return {
         success: false,
         error: `Security violation: This reset link was issued for an unauthorized address (${email}). Only ${ENFORCED_ADMIN_EMAIL} is permitted.`
@@ -365,14 +365,18 @@ export async function confirmAdminPasswordResetAndLogin(
   }
 
   try {
-    // 1. Confirm the password reset in Firebase Auth using the oobCode
+    // 1. Verify the code first to get the associated email
+    const emailRes = await verifyAdminPasswordResetCode(oobCode);
+    const targetEmail = (emailRes.success && emailRes.email) ? emailRes.email : ENFORCED_ADMIN_EMAIL;
+
+    // 2. Confirm the password reset in Firebase Auth using the oobCode
     await confirmPasswordReset(auth, oobCode.trim(), newPassword);
 
-    // 2. Set the runtime effective password so future calls immediately recognize it
+    // 3. Set the runtime effective password so future calls immediately recognize it
     setRuntimeAdminPassword(newPassword);
 
-    // 3. Immediately log in with the updated credentials!
-    const loginRes = await loginAdmin(ENFORCED_ADMIN_EMAIL, newPassword);
+    // 4. Immediately log in with the updated credentials!
+    const loginRes = await loginAdmin(targetEmail, newPassword);
     if (!loginRes.success) {
       return {
         success: false,
@@ -423,9 +427,9 @@ export function onAdminAuthStateChanged(callback: (admin: AdminUser | null, load
       return;
     }
 
-    // Strict single-user check: immediately evict any user other than the single enforced admin
+    // Strict single-user check: immediately evict any user other than the authorized admin
     const userEmail = (user.email || '').trim().toLowerCase();
-    if (userEmail !== ENFORCED_ADMIN_EMAIL.toLowerCase()) {
+    if (!isAuthorizedAdminEmail(userEmail)) {
       console.warn(`[Security Alert] Non-admin session detected (${user.email}). Forcing sign-out.`);
       await signOut(auth);
       callback(null, false);

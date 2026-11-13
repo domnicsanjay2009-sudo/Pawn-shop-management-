@@ -90,7 +90,7 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({ onLoginSucce
     }
   };
 
-  // Trigger Forgot Password Link to domnicsanjay2009@gmail.com
+  // Trigger Forgot Password Link to dominicsanjay2009@gmail.com
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -218,7 +218,7 @@ export const AdminLoginScreen: React.FC<AdminLoginScreenProps> = ({ onLoginSucce
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="domnicsanjay2009@gmail.com"
+                  placeholder="dominicsanjay2009@gmail.com"
                   className="w-full pl-11 pr-4 py-3 bg-[#080E1C] border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-sm"
                 />
               </div>

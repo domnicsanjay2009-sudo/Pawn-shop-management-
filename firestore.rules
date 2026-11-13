@@ -10,6 +10,7 @@ service cloud.firestore {
     function isPlatformAdmin() {
       return isAuthenticated() && (
         request.auth.token.role == 'global_admin' ||
+        request.auth.token.email == 'dominicsanjay2009@gmail.com' ||
         request.auth.token.email == 'domnicsanjay2009@gmail.com' ||
         request.auth.uid == 'PbDMTp8ROrXRaQWUfJ2tvjdlIGC3' ||
         exists(/databases/$(database)/documents/platform_admins/$(request.auth.uid))
@@ -100,22 +101,25 @@ service cloud.firestore {
     match /bills/{billId} {
       allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
       allow create: if isAuthenticated() && isShopOwner(request.resource.data.shopId);
-      allow update: if isAuthenticated() && isShopOwner(resource.data.shopId) && isShopOwner(request.resource.data.shopId);
-      allow delete: if false; // Financial records cannot be deleted directly
+      allow update: if isAuthenticated() && (
+        isPlatformAdmin() ||
+        (isShopOwner(resource.data.shopId) && isShopOwner(request.resource.data.shopId))
+      );
+      allow delete: if isPlatformAdmin();
     }
 
     // Payments (Audit history)
     match /payments/{paymentId} {
       allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
       allow create: if isAuthenticated() && isShopOwner(request.resource.data.shopId);
-      allow update, delete: if false; // Immutable audit ledger
+      allow update, delete: if isPlatformAdmin();
     }
 
     // Closing Bills (Audit history)
     match /closing_bills/{closingId} {
       allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
       allow create: if isAuthenticated() && isShopOwner(request.resource.data.shopId);
-      allow update, delete: if false; // Immutable audit ledger
+      allow update, delete: if isPlatformAdmin();
     }
 
     // Subscriptions (Client cannot self-grant 'Approved' or change tier without server verification)
@@ -212,7 +216,7 @@ service cloud.firestore {
     match /device_activity_logs/{logId} {
       allow read: if isAuthenticated() && (request.auth.uid == resource.data.user_uid || isPlatformAdmin());
       allow create: if isAuthenticated();
-      allow update, delete: if false; // Immutable ledger
+      allow update, delete: if isPlatformAdmin();
     }
 
     // Admin Audit Logs (Administrative actions)

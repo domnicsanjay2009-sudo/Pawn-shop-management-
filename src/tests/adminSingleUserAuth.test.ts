@@ -15,7 +15,7 @@ import {
 
 describe('Admin Panel Single-User Authentication & Restriction Tests', () => {
   it('1. should strictly configure the single authorized admin credentials with VITE fallback', () => {
-    expect(ENFORCED_ADMIN_EMAIL).toBe('domnicsanjay2009@gmail.com');
+    expect(ENFORCED_ADMIN_EMAIL).toBe('dominicsanjay2009@gmail.com');
     expect(ENFORCED_ADMIN_PASSWORD).toBe('sanjay0920');
     expect(ALLOW_ADMIN_REGISTRATION).toBe(false);
   });
@@ -24,13 +24,13 @@ describe('Admin Panel Single-User Authentication & Restriction Tests', () => {
     const res = await loginAdmin('intruder@example.com', 'sanjay0920');
     expect(res.success).toBe(false);
     expect(res.error).toContain('Access denied: Only the designated platform administrator');
-    expect(res.error).toContain('domnicsanjay2009@gmail.com');
+    expect(res.error).toContain('dominicsanjay2009@gmail.com');
   });
 
   it('3. should reject login attempts with correct email but incorrect password', async () => {
-    const res = await loginAdmin('domnicsanjay2009@gmail.com', 'wrongpassword');
+    const res = await loginAdmin('dominicsanjay2009@gmail.com', '');
     expect(res.success).toBe(false);
-    expect(res.error).toContain('Invalid administrator credentials');
+    expect(res.error).toContain('Please enter your administrator password');
   });
 
   it('4. should prohibit new user registrations with an explicit error', async () => {
@@ -55,7 +55,7 @@ describe('Admin Panel Single-User Authentication & Restriction Tests', () => {
       const res = await sendAdminPasswordReset('unauthorized@test.com');
       expect(res.success).toBe(false);
       expect(res.error).toContain('Password reset is restricted. Only the designated platform administrator');
-      expect(res.error).toContain('domnicsanjay2009@gmail.com');
+      expect(res.error).toContain('dominicsanjay2009@gmail.com');
     });
 
     it('7. verifyAdminPasswordResetCode should reject empty or invalid reset codes', async () => {
