@@ -244,8 +244,13 @@ export default async function handler(req, res) {
       });
     }
 
-    // 5. Razorpay Webhook Handler
-    if (urlPath.endsWith('/webhook') || urlPath.endsWith('/api/webhook')) {
+    // 5. Razorpay Webhook Handler (supports both /api/webhook and /api/razorpay-webhook)
+    if (
+      urlPath.endsWith('/webhook') ||
+      urlPath.endsWith('/api/webhook') ||
+      urlPath.endsWith('/razorpay-webhook') ||
+      urlPath.endsWith('/api/razorpay-webhook')
+    ) {
       const signature = req.headers['x-razorpay-signature'];
       const rawBody = await (async () => {
         if (typeof req.body === 'string') return req.body;

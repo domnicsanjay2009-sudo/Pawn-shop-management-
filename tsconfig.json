@@ -12,9 +12,11 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
+    "allowJs": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src", "api"],
+  "exclude": ["src/tests", "**/*.test.ts", "**/*.test.tsx", "node_modules", "dist"]
 }

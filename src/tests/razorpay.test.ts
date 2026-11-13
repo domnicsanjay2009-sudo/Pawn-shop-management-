@@ -151,6 +151,7 @@ describe('Razorpay Integration & Security Verification Suite', () => {
 
   describe('8. Serverless Razorpay API Endpoint Validation (/api/index.js)', () => {
     it('should verify payment signature and return activated subscription structure', async () => {
+      // @ts-ignore
       const apiHandler = (await import('../../api/index.js')).default;
       const orderId = 'order_UnitTestOrder123';
       const paymentId = 'pay_UnitTestPayment456';
@@ -195,6 +196,7 @@ describe('Razorpay Integration & Security Verification Suite', () => {
     });
 
     it('should reject payment verification with 403 on tampered signature', async () => {
+      // @ts-ignore
       const apiHandler = (await import('../../api/index.js')).default;
       const req: any = {
         method: 'POST',
@@ -229,6 +231,7 @@ describe('Razorpay Integration & Security Verification Suite', () => {
     });
 
     it('should return 400 when create-order is missing mandatory fields', async () => {
+      // @ts-ignore
       const apiHandler = (await import('../../api/index.js')).default;
       const req: any = {
         method: 'POST',
