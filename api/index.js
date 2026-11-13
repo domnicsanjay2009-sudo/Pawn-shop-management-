@@ -1,9 +1,9 @@
 // Vercel Serverless Function entry point for GS Pawn shop management API
 import crypto from 'crypto';
 
-// Confirmed live credentials with fallback to process.env
-const KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_Tu8s092MqjR3il';
-const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'mZl6mJyLzV40E7GG1GP0r2AN';
+// Confirmed Test Mode credentials with fallback to process.env
+const KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_test_TzhIwlAo62Vn7n';
+const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'g5RPEmA6TcfwoQozy5m8gNMU';
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 
 // Authoritative Pricing constants in paise (₹1,999 = 199900 paise, ₹2,999 = 299900 paise)

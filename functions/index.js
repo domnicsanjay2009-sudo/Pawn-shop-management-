@@ -17,8 +17,8 @@ const regionalFunctions = functions.region('asia-south1');
  * Lazy initialize Razorpay client with private backend credentials
  */
 function getRazorpayInstance() {
-  const keyId = process.env.RAZORPAY_KEY_ID || functions.config().razorpay?.key_id || 'rzp_live_Tu8s092MqjR3il';
-  const keySecret = process.env.RAZORPAY_KEY_SECRET || functions.config().razorpay?.key_secret || 'mZl6mJyLzV40E7GG1GP0r2AN';
+  const keyId = process.env.RAZORPAY_KEY_ID || functions.config().razorpay?.key_id || 'rzp_test_TzhIwlAo62Vn7n';
+  const keySecret = process.env.RAZORPAY_KEY_SECRET || functions.config().razorpay?.key_secret || 'g5RPEmA6TcfwoQozy5m8gNMU';
   
   if (!keyId || !keySecret) {
     throw new functions.https.HttpsError(

@@ -317,7 +317,7 @@ export async function initiateRazorpayPayment(
       throw new Error('Payment server failed to return a valid Razorpay Order ID.');
     }
 
-    const razorpayKey = keyId || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_Tu8s092MqjR3il';
+    const razorpayKey = keyId || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TzhIwlAo62Vn7n';
 
     // 2. Configure Standard Razorpay Checkout
     const options = {
