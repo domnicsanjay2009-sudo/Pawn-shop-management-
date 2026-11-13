@@ -13,11 +13,21 @@ export default async function handler(req, res) {
 
   try {
     let body = req.body;
-    if (typeof body === 'string') {
-      try {
-        body = JSON.parse(body);
-      } catch (e) {
-        return res.status(400).json({ error: 'Invalid JSON payload' });
+    if (!body || typeof body !== 'object') {
+      let rawData = typeof body === 'string' ? body : '';
+      if (!rawData) {
+        for await (const chunk of req) {
+          rawData += chunk;
+        }
+      }
+      if (rawData) {
+        try {
+          body = JSON.parse(rawData);
+        } catch (_) {
+          body = {};
+        }
+      } else {
+        body = {};
       }
     }
 
@@ -37,7 +47,8 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     return res.status(500).json({
-      error: 'Failed to process inquiry. Please email us directly at domnicsanjay2009@gmail.com.'
+      error: 'Failed to process inquiry. Please email us directly at domnicsanjay2009@gmail.com.',
+      details: err?.message || String(err)
     });
   }
 }
