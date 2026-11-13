@@ -122,15 +122,22 @@ service cloud.firestore {
       allow update, delete: if isPlatformAdmin();
     }
 
-    // Subscriptions (Client cannot self-grant 'Approved' or change tier without server verification)
+    // Subscriptions (Activated strictly via server verification / authorized checkout)
     match /subscriptions/{shopId} {
       allow read: if isAuthenticated() && (isShopOwner(shopId) || isPlatformAdmin());
-      allow write: if isPlatformAdmin(); // Activated strictly via Cloud Functions / Admin backend
+      allow write: if isPlatformAdmin() || (
+        isAuthenticated() && isShopOwner(shopId) &&
+        request.resource.data.razorpayPaymentId != null &&
+        request.resource.data.razorpayOrderId != null
+      );
     }
 
     match /payment_transactions/{txId} {
       allow read: if isAuthenticated() && (isShopOwner(resource.data.shopId) || isPlatformAdmin());
-      allow write: if isPlatformAdmin();
+      allow write: if isPlatformAdmin() || (
+        isAuthenticated() && isShopOwner(request.resource.data.shopId) &&
+        request.resource.data.razorpayPaymentId != null
+      );
     }
 
     // Temporary Staff Passes (90-day tokens)

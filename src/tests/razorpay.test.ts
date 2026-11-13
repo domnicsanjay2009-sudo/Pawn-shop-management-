@@ -149,16 +149,111 @@ describe('Razorpay Integration & Security Verification Suite', () => {
     });
   });
 
-  describe('7. Bill Number Monotonic Generation', () => {
-    it('should calculate next bill number from maximum existing bill suffix', () => {
-      const existingBillNumbers = ['B-1001', 'B-1005', 'B-1003', 'B-1004'];
-      let maxNum = 1000;
-      existingBillNumbers.forEach((b) => {
-        const val = parseInt(b.replace('B-', ''), 10);
-        if (val > maxNum) maxNum = val;
+  describe('8. Serverless Razorpay API Endpoint Validation (/api/index.js)', () => {
+    it('should verify payment signature and return activated subscription structure', async () => {
+      const apiHandler = (await import('../../api/index.js')).default;
+      const orderId = 'order_UnitTestOrder123';
+      const paymentId = 'pay_UnitTestPayment456';
+      const secret = 'mZl6mJyLzV40E7GG1GP0r2AN';
+      const signature = crypto.createHmac('sha256', secret).update(`${orderId}|${paymentId}`).digest('hex');
+
+      const req: any = {
+        method: 'POST',
+        url: '/api/verify-payment',
+        headers: {},
+        body: {
+          razorpayOrderId: orderId,
+          razorpayPaymentId: paymentId,
+          razorpaySignature: signature,
+          planName: 'Yearly Premium',
+          shopId: 'shop_test_shop_1'
+        }
+      };
+
+      let statusCode = 200;
+      let bodyData: any = null;
+      const res: any = {
+        setHeader: () => {},
+        end: (str: string) => {
+          bodyData = JSON.parse(str);
+        }
+      };
+      Object.defineProperty(res, 'statusCode', {
+        set: (code) => { statusCode = code; },
+        get: () => statusCode
       });
-      const nextBillNumber = `B-${maxNum + 1}`;
-      expect(nextBillNumber).toBe('B-1006');
+
+      await apiHandler(req, res);
+
+      expect(statusCode).toBe(200);
+      expect(bodyData.success).toBe(true);
+      expect(bodyData.verified).toBe(true);
+      expect(bodyData.subscription.plan).toBe('Yearly Premium');
+      expect(bodyData.subscription.amountPaise).toBe(299900);
+      expect(bodyData.subscription.maxDevices).toBe(9);
+      expect(bodyData.subscription.status).toBe('Approved');
+    });
+
+    it('should reject payment verification with 403 on tampered signature', async () => {
+      const apiHandler = (await import('../../api/index.js')).default;
+      const req: any = {
+        method: 'POST',
+        url: '/api/verify-payment',
+        headers: {},
+        body: {
+          razorpayOrderId: 'order_123',
+          razorpayPaymentId: 'pay_123',
+          razorpaySignature: 'bad_tampered_signature_hex',
+          planName: 'Yearly',
+          shopId: 'shop_test_shop_1'
+        }
+      };
+
+      let statusCode = 200;
+      let bodyData: any = null;
+      const res: any = {
+        setHeader: () => {},
+        end: (str: string) => {
+          bodyData = JSON.parse(str);
+        }
+      };
+      Object.defineProperty(res, 'statusCode', {
+        set: (code) => { statusCode = code; },
+        get: () => statusCode
+      });
+
+      await apiHandler(req, res);
+
+      expect(statusCode).toBe(403);
+      expect(bodyData.error).toContain('Invalid payment signature');
+    });
+
+    it('should return 400 when create-order is missing mandatory fields', async () => {
+      const apiHandler = (await import('../../api/index.js')).default;
+      const req: any = {
+        method: 'POST',
+        url: '/api/create-order',
+        headers: {},
+        body: {}
+      };
+
+      let statusCode = 200;
+      let bodyData: any = null;
+      const res: any = {
+        setHeader: () => {},
+        end: (str: string) => {
+          bodyData = JSON.parse(str);
+        }
+      };
+      Object.defineProperty(res, 'statusCode', {
+        set: (code) => { statusCode = code; },
+        get: () => statusCode
+      });
+
+      await apiHandler(req, res);
+
+      expect(statusCode).toBe(400);
+      expect(bodyData.error).toContain('Missing mandatory fields');
     });
   });
 });

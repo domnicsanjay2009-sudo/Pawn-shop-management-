@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  setDoc,
   addDoc,
   query,
   where,
@@ -122,34 +123,70 @@ async function requestCreateOrder(
   planName: string,
   shopId: string
 ): Promise<{ orderId: string; amount: number; currency: string; keyId?: string }> {
-  const backendUrl = import.meta.env.VITE_BACKEND_API_URL;
+  const backendUrl = (import.meta.env.VITE_BACKEND_API_URL || '').trim();
+  const primaryEndpoint = backendUrl
+    ? `${backendUrl.replace(/\/+$/, '')}/api/create-order`
+    : '/api/create-order';
 
-  if (backendUrl) {
-    const token = await getAuthToken();
-    const res = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/create-order`, {
+  let token = '';
+  try {
+    token = await getAuthToken();
+  } catch (tErr) {
+    console.warn('Auth token retrieval note before order creation:', tErr);
+  }
+
+  // 1. Primary: Call Vercel Serverless / Express REST API endpoint
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(primaryEndpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
       body: JSON.stringify({ planName, shopId }),
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || data.message || `Order creation failed (${res.status})`);
+    const data = await res.json().catch(() => null);
+
+    if (res.ok && data?.orderId) {
+      return data;
     }
-    return data;
+
+    if (data?.error) {
+      throw new Error(data.error);
+    }
+  } catch (primaryErr: any) {
+    if (primaryErr?.message && !primaryErr.message.includes('Failed to fetch') && !primaryErr.message.includes('fetch')) {
+      throw primaryErr;
+    }
+    console.warn('Primary endpoint unreachable, trying Cloud Function fallback:', primaryErr?.message);
   }
 
-  // Fallback to Firebase Cloud Functions
-  const createOrderFn = httpsCallable<
-    { planName: string; shopId: string },
-    { orderId: string; amount: number; currency: string; keyId?: string }
-  >(functions, 'createRazorpayOrder');
+  // 2. Secondary fallback: Firebase Cloud Functions
+  try {
+    const createOrderFn = httpsCallable<
+      { planName: string; shopId: string },
+      { orderId: string; amount: number; currency: string; keyId?: string }
+    >(functions, 'createRazorpayOrder');
 
-  const orderRes = await createOrderFn({ planName, shopId });
-  return orderRes.data;
+    const orderRes = await createOrderFn({ planName, shopId });
+    if (orderRes?.data?.orderId) {
+      return orderRes.data;
+    }
+  } catch (cloudFnErr: any) {
+    console.error('Cloud Function createRazorpayOrder failed:', cloudFnErr);
+    const msg = cloudFnErr?.message || '';
+    if (msg.toLowerCase().includes('internal')) {
+      throw new Error('Payment gateway service error. Please verify your connection or contact domnicsanjay2009@gmail.com.');
+    }
+    throw new Error(msg || 'Failed to create payment order with gateway.');
+  }
+
+  throw new Error('Failed to create Razorpay payment order. Please ensure payment service is reachable.');
 }
 
 /**
@@ -162,44 +199,80 @@ async function requestVerifyPayment(payload: {
   planName: string;
   shopId: string;
 }): Promise<{ success: boolean; subscription: Subscription }> {
-  const backendUrl = import.meta.env.VITE_BACKEND_API_URL;
+  const backendUrl = (import.meta.env.VITE_BACKEND_API_URL || '').trim();
+  const primaryEndpoint = backendUrl
+    ? `${backendUrl.replace(/\/+$/, '')}/api/verify-payment`
+    : '/api/verify-payment';
 
-  if (backendUrl) {
-    const token = await getAuthToken();
-    const res = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/verify-payment`, {
+  let token = '';
+  try {
+    token = await getAuthToken();
+  } catch (tErr) {
+    console.warn('Auth token retrieval note before payment verification:', tErr);
+  }
+
+  // 1. Primary: Call Vercel Serverless / Express REST API endpoint
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(primaryEndpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || data.message || `Payment verification failed (${res.status})`);
+    const data = await res.json().catch(() => null);
+
+    if (res.ok && data?.success && data?.subscription) {
+      return data;
     }
-    return data;
+
+    if (data?.error) {
+      throw new Error(data.error);
+    }
+  } catch (primaryErr: any) {
+    if (primaryErr?.message && !primaryErr.message.includes('Failed to fetch') && !primaryErr.message.includes('fetch')) {
+      throw primaryErr;
+    }
+    console.warn('Primary verify-payment endpoint unreachable, trying Cloud Function fallback:', primaryErr?.message);
   }
 
-  // Fallback to Firebase Cloud Functions
-  const verifyPaymentFn = httpsCallable<
-    typeof payload,
-    { success: boolean; subscription: Subscription }
-  >(functions, 'verifyRazorpayPayment');
+  // 2. Secondary fallback: Firebase Cloud Functions
+  try {
+    const verifyPaymentFn = httpsCallable<
+      typeof payload,
+      { success: boolean; subscription: Subscription }
+    >(functions, 'verifyRazorpayPayment');
 
-  const verifyRes = await verifyPaymentFn(payload);
-  return verifyRes.data;
+    const verifyRes = await verifyPaymentFn(payload);
+    if (verifyRes?.data?.success) {
+      return verifyRes.data;
+    }
+  } catch (cloudFnErr: any) {
+    console.error('Cloud Function verifyRazorpayPayment failed:', cloudFnErr);
+    const msg = cloudFnErr?.message || '';
+    if (msg.toLowerCase().includes('internal')) {
+      throw new Error('Payment verification service error. Please contact domnicsanjay2009@gmail.com.');
+    }
+    throw new Error(msg || 'Server-side payment verification failed.');
+  }
+
+  throw new Error('Payment verification could not be confirmed. Please contact support.');
 }
 
 /**
  * Razorpay Payment Workflow:
  * 1. Verifies online state (offline-first safeguard)
  * 2. Checks active subscription, allowing upgrades and renewals near expiry
- * 3. Calls backend (Vercel / Render REST API or Cloud Function) to create order
+ * 3. Calls backend (Vercel serverless / Express REST API or Cloud Function) to create order
  * 4. Opens standard Razorpay Checkout
  * 5. Verifies signature server-side
- * 6. Activates subscription securely
+ * 6. Activates subscription securely in real-time
  */
 export async function initiateRazorpayPayment(
   shopId: string,
@@ -241,7 +314,7 @@ export async function initiateRazorpayPayment(
     const { orderId, amount, currency, keyId } = await requestCreateOrder(planType, shopId);
 
     if (!orderId) {
-      throw new Error('Backend failed to return a valid Razorpay Order ID.');
+      throw new Error('Payment server failed to return a valid Razorpay Order ID.');
     }
 
     const razorpayKey = keyId || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_Tu8s092MqjR3il';
@@ -267,6 +340,47 @@ export async function initiateRazorpayPayment(
           });
 
           if (verifyRes?.success && verifyRes?.subscription) {
+            const sub = verifyRes.subscription;
+            // Atomically write verified subscription & payment transaction to Firestore
+            try {
+              const subDocRef = doc(db, SUBSCRIPTION_COLLECTION, shopId);
+              await setDoc(subDocRef, {
+                id: `sub_${shopId}`,
+                shopId,
+                plan: sub.plan,
+                amountPaise: sub.amountPaise,
+                startDate: sub.startDate || Date.now(),
+                expiryDate: sub.expiryDate,
+                status: 'Approved',
+                maxDevices: sub.maxDevices || 3,
+                activeDeviceIds: ['device_primary'],
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                paymentStatus: 'PAID',
+                entitlementSource: 'RAZORPAY',
+                approvedAt: sub.approvedAt || Date.now(),
+                updatedAt: Date.now(),
+                createdAt: sub.createdAt || Date.now(),
+              }, { merge: true });
+
+              const txDocRef = doc(db, TRANSACTIONS_COLLECTION, `tx_${response.razorpay_payment_id}`);
+              await setDoc(txDocRef, {
+                id: `tx_${response.razorpay_payment_id}`,
+                shopId,
+                plan: sub.plan,
+                amountPaise: sub.amountPaise,
+                currency: 'INR',
+                paymentMethod: 'Razorpay Standard Checkout',
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                status: 'Approved',
+                verifiedServerSide: true,
+                createdAt: Date.now(),
+              }, { merge: true });
+            } catch (fsWriteErr) {
+              console.warn('Client Firestore subscription sync note:', fsWriteErr);
+            }
+
             onSuccess(verifyRes.subscription);
           } else {
             onError('Payment succeeded at gateway, but server-side verification could not be confirmed. Please contact support.');
