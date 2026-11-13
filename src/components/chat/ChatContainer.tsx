@@ -59,7 +59,7 @@ export const ChatContainer: React.FC = () => {
     {
       id: 'welcome_ai',
       sender: 'ai',
-      text: "Hello! I am your AI Support Assistant. I can help guide you on how to use Pawn Shop Management features, create bills, record payments, calculate interest, and configure local app lock. What would you like to ask?",
+      text: "Vanakkam! I am AI Care Plus, your dedicated customer support assistant for GS Pawn Shop Management. I can explain pledge bills, interest calculations, renewals, redemptions, compliance, and subscription plans in English, Tamil (தமிழ்), or Tanglish. How can I help you today?",
       time: Date.now(),
     },
   ]);
@@ -210,7 +210,7 @@ export const ChatContainer: React.FC = () => {
     if (!aiInput.trim()) return;
 
     if (!isPremium) {
-      showToast('AI Customer Care is an exclusive feature of the Yearly Premium Plan.', 'warning');
+      showToast('AI Care Plus is an exclusive feature of the Yearly Premium Plan.', 'warning');
       return;
     }
 
@@ -224,30 +224,32 @@ export const ChatContainer: React.FC = () => {
     ]);
 
     setAskingAi(true);
-    const result = await askGeminiCustomerCare(question, isPremium);
+
+    const historyItems = aiMessages.map((m) => ({
+      role: m.sender === 'user' ? ('user' as const) : ('model' as const),
+      text: m.text,
+    }));
+
+    const dynamicContext = {
+      shopName: shopProfile?.shopName || 'GS Pawn Shop',
+      ownerName: shopProfile?.ownerName || currentUser?.displayName || 'Shop Owner',
+      plan: isPremium ? 'Yearly Premium' : 'Yearly',
+      activeDevices: 1,
+      maxDevices: isPremium ? 9 : 3,
+    };
+
+    const result = await askGeminiCustomerCare(question, isPremium, dynamicContext, historyItems);
     setAskingAi(false);
 
-    if (result.error) {
-      setAiMessages((prev) => [
-        ...prev,
-        {
-          id: `ai_${Date.now()}`,
-          sender: 'ai',
-          text: `Error: ${result.error}`,
-          time: Date.now(),
-        },
-      ]);
-    } else {
-      setAiMessages((prev) => [
-        ...prev,
-        {
-          id: `ai_${Date.now()}`,
-          sender: 'ai',
-          text: result.text,
-          time: Date.now(),
-        },
-      ]);
-    }
+    setAiMessages((prev) => [
+      ...prev,
+      {
+        id: `ai_${Date.now()}`,
+        sender: 'ai',
+        text: result.text || 'How can I assist you further with your pawn shop operations?',
+        time: Date.now(),
+      },
+    ]);
   };
 
   return (
@@ -282,7 +284,7 @@ export const ChatContainer: React.FC = () => {
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>AI Customer Care</span>
+            <span>AI Care Plus</span>
             {!isPremium && <Lock className="w-3 h-3 text-slate-400 ml-1" />}
           </button>
         </div>
@@ -423,7 +425,7 @@ export const ChatContainer: React.FC = () => {
         </div>
       )}
 
-      {/* AI Customer Care View (Gated to Premium) */}
+      {/* AI Care Plus View (Gated to Premium) */}
       {activeTab === 'ai' && (
         <div className="flex-1 flex flex-col justify-between overflow-hidden">
           {!isPremium ? (
@@ -432,23 +434,30 @@ export const ChatContainer: React.FC = () => {
                 <Sparkles className="w-8 h-8" />
               </div>
               <h3 className="text-xl font-bold text-brand-950">
-                Premium AI Customer Care
+                AI Care Plus (Gemini Integration)
               </h3>
               <p className="text-xs text-slate-500 max-w-md mt-2 leading-relaxed">
-                Live AI Customer Care powered by Gemini is available exclusively to Yearly Premium subscribers.
-                Upgrade your subscription to get 24/7 instant guidance for all your pawn shop workflows.
+                Live AI Care Plus powered by Google Gemini is available exclusively to Yearly Premium subscribers.
+                Upgrade your subscription to get 24/7 instant guidance for pledge bills, interest calculations, redemptions, and compliance in English, Tamil, and Tanglish.
               </p>
             </div>
           ) : (
             <>
-              {/* Disclaimer */}
-              <div className="bg-blue-50 px-4 py-2 border-b border-blue-100 text-[11px] text-blue-900 flex items-center justify-between">
-                <span>
-                  <strong>AI Assistant:</strong> Answers usage queries instantly. No private customer records are ever sent to Gemini.
-                </span>
-                <span className="bg-blue-200/60 font-semibold px-2 py-0.5 rounded text-[10px]">
-                  AI Generated
-                </span>
+              {/* AI Care Plus Header Banner */}
+              <div className="bg-gradient-to-r from-indigo-50 via-blue-50 to-amber-50/30 px-4 py-2.5 border-b border-indigo-100/80 text-[11px] text-slate-800 flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-extrabold text-brand-950">AI Care Plus:</span>
+                  <span className="text-slate-600 hidden sm:inline">Pawn operations, interest rules &amp; redemption assistant</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded text-[10px]">
+                    Tamil • Tanglish • English
+                  </span>
+                  <span className="bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded text-[10px]">
+                    Gemini Live
+                  </span>
+                </div>
               </div>
 
               {/* Messages Body */}
@@ -468,9 +477,14 @@ export const ChatContainer: React.FC = () => {
                         }`}
                       >
                         <div className="flex items-center space-x-2 mb-1">
-                          <span className="font-bold text-[11px] opacity-75">
-                            {isUser ? 'You' : 'Gemini AI Assistant'}
-                          </span>
+                          {isUser ? (
+                            <span className="font-bold text-[11px] opacity-75">You</span>
+                          ) : (
+                            <span className="font-bold text-[11px] text-brand-950 flex items-center space-x-1">
+                              <span className="text-amber-500 font-bold">✦</span>
+                              <span>AI Care Plus</span>
+                            </span>
+                          )}
                         </div>
                         <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                       </div>
@@ -481,7 +495,7 @@ export const ChatContainer: React.FC = () => {
                   <div className="flex justify-start">
                     <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-none px-4 py-3 shadow-xs flex items-center space-x-2 text-xs text-slate-500">
                       <Loader2 className="w-4 h-4 animate-spin text-accent-600" />
-                      <span>Gemini is thinking...</span>
+                      <span>AI Care Plus is thinking...</span>
                     </div>
                   </div>
                 )}
@@ -498,7 +512,7 @@ export const ChatContainer: React.FC = () => {
                   required
                   value={aiInput}
                   onChange={(e) => setAiInput(e.target.value)}
-                  placeholder="Ask a question about adding bills, interest calculations, settings..."
+                  placeholder="Ask in English or Tamil (e.g. 'How to calculate interest?' or 'Bill close panradhu eppadi?')..."
                   className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-accent-500"
                 />
                 <button

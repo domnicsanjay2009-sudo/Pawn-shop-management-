@@ -197,110 +197,76 @@ export async function sendCustomerMessage(
   }
 }
 
+export interface AIChatContext {
+  shopName?: string;
+  ownerName?: string;
+  plan?: string;
+  activeDevices?: number;
+  maxDevices?: number;
+}
+
+export interface AIChatHistoryItem {
+  role: 'user' | 'model';
+  text: string;
+}
+
 /**
- * Premium AI Customer Care powered by Gemini through secure backend function or proxy
+ * 'AI Care Plus' Customer Support powered by Gemini through secure serverless backend
  * Ensures NO private financial customer records are ever sent to Gemini.
  */
 export async function askGeminiCustomerCare(
   question: string,
-  isPremium: boolean
-): Promise<{ text: string; error?: string }> {
+  isPremium: boolean,
+  context?: AIChatContext,
+  history?: AIChatHistoryItem[]
+): Promise<{ text: string; error?: string; persona?: string }> {
   if (!isPremium) {
     return {
       text: '',
-      error: 'AI Customer Care is an exclusive feature of the Yearly Premium Plan.'
+      error: 'AI Care Plus is an exclusive feature of the Yearly Premium Plan.'
     };
   }
 
   try {
-    // In production, this calls the secure backend endpoint:
-    // POST /api/ask-gemini { question }
-    // which holds the GEMINI_API_KEY privately.
-    const backendEndpoint = import.meta.env.VITE_BACKEND_GEMINI_ENDPOINT ||
-      (import.meta.env.VITE_BACKEND_API_URL ? `${import.meta.env.VITE_BACKEND_API_URL.replace(/\/+$/, '')}/api/ask-gemini` : '');
+    const backendEndpoint =
+      import.meta.env.VITE_BACKEND_GEMINI_ENDPOINT ||
+      (import.meta.env.VITE_BACKEND_API_URL
+        ? `${import.meta.env.VITE_BACKEND_API_URL.replace(/\/+$/, '')}/api/ask-gemini`
+        : '/api/ask-gemini');
 
-    if (backendEndpoint) {
-      let authToken = '';
-      try {
-        if (auth.currentUser) {
-          authToken = await auth.currentUser.getIdToken();
-        }
-      } catch (tokenErr) {
-        console.warn('Could not fetch auth token for AI support:', tokenErr);
+    let authToken = '';
+    try {
+      if (auth.currentUser) {
+        authToken = await auth.currentUser.getIdToken();
       }
+    } catch (tokenErr) {
+      console.warn('Could not fetch auth token for AI support:', tokenErr);
+    }
 
-      const res = await fetch(backendEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
-        },
-        body: JSON.stringify({ question })
-      });
+    const res = await fetch(backendEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      },
+      body: JSON.stringify({ question, context, history })
+    });
+
+    if (res.ok) {
       const data = await res.json();
-      return { text: data.reply || data.text };
-    }
-
-    // Direct client fallback if API key is present in testing environment
-    const testApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (testApiKey && !testApiKey.includes('DEMO')) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${testApiKey}`;
-      const payload = {
-        contents: [{
-          role: "user",
-          parts: [{
-            text: `You are an AI Customer Care assistant for Pawn Shop Management software.
-Guidelines:
-1. Provide concise, clear, polite guidance about how to use the app (e.g. adding parties, creating pledge bills, recording payments, closing bills, app lock, settings).
-2. Do not fabricate or request sensitive customer financial numbers.
-3. Be friendly and helpful.
-User Question: ${question}`
-          }]
-        }]
-      };
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
-        return { text: data.candidates[0].content.parts[0].text };
-      }
-    }
-
-    // High-quality contextual fallback answers for common pawn shop software operations
-    const qLower = question.toLowerCase();
-    if (qLower.includes('add bill') || qLower.includes('create bill') || qLower.includes('new bill')) {
       return {
-        text: 'To create a bill: Navigate to "Parties", select a customer (or tap "Add Party" if new), and click "Add Bill". Choose the collateral category (Gold, Silver, or Others), enter gross/net weight and principal amount. The interest rate and duration will auto-fill from your Settings.'
-      };
-    } else if (qLower.includes('payment') || qLower.includes('pay') || qLower.includes('interest')) {
-      return {
-        text: 'Payments automatically settle any accrued interest first based on the days elapsed since the bill was created. Any extra payment amount goes directly to reducing the outstanding principal.'
-      };
-    } else if (qLower.includes('close') || qLower.includes('closing')) {
-      return {
-        text: 'To close a bill: Open the party detail view, find the active bill, and click "Close Bill". The system reconciles the remaining principal plus accrued interest to show the exact final settlement amount.'
-      };
-    } else if (qLower.includes('lock') || qLower.includes('pin') || qLower.includes('fingerprint')) {
-      return {
-        text: 'App Lock can be configured in Settings with a 4-6 digit PIN or a Password, plus Biometric/Fingerprint authentication. It automatically protects your shop data with a 2-minute background inactivity lock.'
-      };
-    } else if (qLower.includes('staff') || qLower.includes('90') || qLower.includes('device')) {
-      return {
-        text: 'As a Premium subscriber, you can connect up to 9 devices and issue 90-day Temporary Staff Passes in the Subscription section to delegate counter tasks safely.'
+        text: data.reply || data.text || 'How can I assist you further with your pawn shop operations?',
+        persona: data.persona || 'AI Care Plus'
       };
     }
 
-    return {
-      text: "I am your Pawn Shop AI Assistant. I can assist you with bill creation, interest rules, customer records, payment entries, closing settlements, and security lock setup. How can I help you today?"
-    };
+    const errData = await res.json().catch(() => ({}));
+    const fallbackMessage = errData.error || 'AI Care Plus service is temporarily unavailable. Please try again shortly or contact Admin Care.';
+    return { text: fallbackMessage, error: fallbackMessage };
   } catch (error: any) {
     return {
-      text: '',
-      error: 'AI Customer Care service is currently unreachable. Please try again or switch to standard Customer Care.'
+      text: 'AI Care Plus service is temporarily experiencing network delays. Our administrative support is available in Admin Care, or you can retry in a moment.',
+      error: error?.message || 'Network request failed'
     };
   }
 }

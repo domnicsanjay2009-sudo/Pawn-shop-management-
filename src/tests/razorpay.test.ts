@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect } from 'vitest';
 import * as crypto from 'crypto';
 import { PLANS } from '../services/subscriptionService';

@@ -6,11 +6,91 @@ const KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_test_TzhIwlAo62Vn7n';
 const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'g5RPEmA6TcfwoQozy5m8gNMU';
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 
+// Secure Gemini API Key for 'AI Care Plus' Customer Support (Loaded via process.env.GEMINI_API_KEY)
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
 // Authoritative Pricing constants in paise (₹1,999 = 199900 paise, ₹2,999 = 299900 paise)
 const PLANS = {
   'Yearly': { name: 'Yearly', amountPaise: 199900, maxDevices: 3, days: 365 },
   'Yearly Premium': { name: 'Yearly Premium', amountPaise: 299900, maxDevices: 9, days: 365 },
 };
+
+function generateCarePlusFallback(question, context) {
+  const qLower = (question || '').toLowerCase();
+  const shopName = context?.shopName || 'GS Pawn Shop';
+  const plan = context?.plan || 'Yearly Premium';
+
+  if (
+    qLower.includes('vanakkam') ||
+    qLower.includes('வணக்கம்') ||
+    qLower.includes('epdi') ||
+    qLower.includes('eppadi') ||
+    qLower.includes('solunga') ||
+    qLower.includes('tamil') ||
+    qLower.includes('tanglish')
+  ) {
+    return `வணக்கம்! நான் உங்கள் "AI Care Plus" உதவியாளர் (${shopName}).
+
+அடகு பில் போடுவது (Pledge Bill), வட்டி கணக்கு (Interest Calculation), கடன் திருப்பம் (Redemption & Closure), அல்லது சப்ஸ்கிரிப்ஷன் பற்றிய அனைத்து சந்தேகங்களுக்கும் நான் தமிழில் மற்றும் Tanglish-ல் உதவ முடியும்.
+
+உங்களுக்கு என்ன உதவி தேவை?`;
+  }
+
+  if (qLower.includes('add bill') || qLower.includes('create bill') || qLower.includes('new bill') || qLower.includes('bill podu')) {
+    return `To create a Pledge Bill in ${shopName}:
+1. Click the "Bills" or "Parties" tab.
+2. Select an existing customer or tap "+ Add Party" for a new customer.
+3. Tap "+ Add Bill".
+4. Enter Collateral Item (Gold, Silver, Platinum), Gross & Net Weight, Purity (e.g. 22K / 916), and Loan Principal amount.
+5. The default interest rate & monthly/daily duration will auto-fill from Settings.
+6. Click "Create Bill" to issue the pledge bill with immediate audit numbering (e.g., B-1001).
+
+(தமிழில்: 'Bills' அல்லது 'Parties' பகுதிக்குச் சென்று '+ Add Bill' கிளிக் செய்து வாடிக்கையாளருக்கு அடகு பில் உருவாக்கலாம்.)`;
+  }
+
+  if (qLower.includes('interest') || qLower.includes('rate') || qLower.includes('calculation') || qLower.includes('vatti')) {
+    return `Interest Calculation Rules:
+1. Accrual: Interest accrues accurately based on the elapsed calendar days and your configured rate (Gold / Silver / Others).
+2. Partial Payments: When a customer pays money, the payment settles accrued interest first. Any remaining balance reduces the principal loan.
+3. Late Fees: If late interest fees or late closing fees are enabled in Settings, they automatically calculate without breaking previous ledgers.
+
+(தமிழில்: வட்டி நாட்கள் அடிப்படையில் கணக்கிடப்படுகிறது. வாடிக்கையாளர் பணம் செலுத்தும்போது முதலில் வட்டி கழிக்கப்பட்டு மீதி அசல் குறையும்.)`;
+  }
+
+  if (qLower.includes('close') || qLower.includes('settle') || qLower.includes('redemption') || qLower.includes('redeem')) {
+    return `Bill Closure & Redemption Steps:
+1. Open the active bill from the "Bills" or "Closing Bills" tab.
+2. Click "Settle & Close a Bill".
+3. The system calculates: Outstanding Principal + Accrued Interest + Late Fees.
+4. Mandatory Adjustment (+ / -):
+   - PLUS (+): Adds any legal/processing penalty or additional charge.
+   - MINUS (-): Applies a discount, concession, or interest waiver.
+5. Allocate payment methods (Cash, GPay, or Bank Transfer) to match the final settlement amount.
+6. The bill is marked "Closed", balance becomes ₹0, and a printed receipt with a CLOSED watermark is generated.`;
+  }
+
+  if (qLower.includes('subscription') || qLower.includes('plan') || qLower.includes('tier') || qLower.includes('price')) {
+    return `Subscription Tiers in GS Pawn Shop Management:
+• Yearly Plan: ₹1,999/year (Up to 3 active devices, unlimited customer records & bills).
+• Yearly Premium Plan: ₹2,999/year (Up to 9 active devices, 90-day Temporary Staff Passes, real-time analytics, and AI Care Plus priority support).
+Current Shop Plan: ${plan}.`;
+  }
+
+  if (qLower.includes('lock') || qLower.includes('pin') || qLower.includes('biometric') || qLower.includes('security')) {
+    return `Local App Lock Security:
+You can secure your pawn ledger in Settings using a 4-6 digit numeric PIN or Password, with optional Biometric/Fingerprint authentication. The app automatically locks upon 2 minutes of background inactivity without logging you out of your 24-hour Firebase session.`;
+  }
+
+  return `Hello! I am "AI Care Plus", your expert customer support assistant for GS Pawn Shop Management (${shopName}).
+
+I can assist you with:
+• Pledge bill creation, purity guidelines & collateral valuation.
+• Interest rules, partial payments & principal reductions.
+• Bill settlement & closing with Plus (+) / Minus (-) adjustments.
+• App navigation, multi-device management & subscription plans.
+
+I understand English, Tamil (தமிழ்), and Tanglish. How can I help you today?`;
+}
 
 function safeCompare(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -268,6 +348,126 @@ export default async function handler(req, res) {
       }
 
       return sendJson(200, { status: 'ok', message: 'Webhook received.' });
+    }
+
+    // 5. 'AI Care Plus' Dedicated Customer Support Endpoint (Gemini Model Integration)
+    if (
+      urlPath.endsWith('/ask-gemini') ||
+      urlPath.endsWith('/api/ask-gemini') ||
+      urlPath.endsWith('/ai-care-plus') ||
+      urlPath.endsWith('/api/ai-care-plus')
+    ) {
+      if (req.method !== 'POST') {
+        return sendJson(405, { error: 'Method not allowed. Please use POST.' });
+      }
+
+      const body = await getParsedBody(req);
+      const { question, context, history } = body || {};
+
+      if (!question || typeof question !== 'string' || !question.trim()) {
+        return sendJson(400, { error: 'Question is required.' });
+      }
+
+      const cleanQuestion = question.trim();
+      const apiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+
+      const systemPrompt = `You are "AI Care Plus", the expert, polite, and dedicated customer support assistant for the GS Pawn Shop Management App.
+
+Your core mission is to assist shop owners and end-users with:
+1. Pledge Bill Details: Explaining pledge bill creation, loan principal, collateral item records (Gold, Silver, Platinum, Others), gross and net weights, purity standards (24K, 22K/916, 925), and bill numbering (e.g. B-1001).
+2. Interest Calculation Rules: Explaining interest accrual policies based on elapsed calendar days, partial payment priority where accrued interest is cleared first before principal reduction, and late fee configurations.
+3. Renewal & Redemption: Explaining pledge renewals, collateral redemption procedures, and bill closures featuring mandatory PLUS (+) adjustments (additional fees, penalty, service charge) or MINUS (-) adjustments (discount, waiver, concession) to reach exact zero outstanding balance.
+4. App Navigation & Billing: Guiding users through the 8 application tabs (Home, Bills, Payments, Closing Bills, Parties, Expired Bills, Analytics, Settings), and explaining subscription tiers: Yearly Plan at ₹1,999/year (up to 3 devices) and Yearly Premium Plan at ₹2,999/year (up to 9 devices, 90-day Temporary Staff Passes, real-time analytics, and AI Care Plus).
+5. Pawn Compliance & KYC: Explaining customer KYC documentation (Aadhaar/phone requirements), pledge bill receipt issuance with CLOSED/EXPIRED watermarks, and safe collateral vaulting.
+6. Multilingual & Politeness Enforcement:
+   - Always be polite, courteous, accurate, and concise.
+   - You MUST fully understand and respond fluently in English, Tamil (தமிழ்), or Tanglish (Tamil in English letters) based on the user's language.
+   - If the user greets or asks in Tamil or Tanglish, reply warmly in Tamil or Tanglish with clear, easy-to-follow steps.
+7. Active Context:
+   - Store Name: ${context?.shopName || 'GS Pawn Shop'}
+   - Shop Owner: ${context?.ownerName || 'Shop Owner'}
+   - Current Subscription Plan: ${context?.plan || 'Yearly Premium'}
+   - Connected Devices: ${context?.activeDevices || 1} of ${context?.maxDevices || 9}`;
+
+      // Build Gemini contents payload with optional history
+      const contents = [];
+      if (Array.isArray(history)) {
+        for (const h of history) {
+          if (h && h.text) {
+            contents.push({
+              role: h.role === 'model' || h.role === 'ai' ? 'model' : 'user',
+              parts: [{ text: String(h.text) }]
+            });
+          }
+        }
+      }
+      contents.push({
+        role: 'user',
+        parts: [{ text: cleanQuestion }]
+      });
+
+      const payload = {
+        systemInstruction: {
+          parts: [{ text: systemPrompt }]
+        },
+        contents,
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 800,
+        }
+      };
+
+      const candidateModels = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-1.5-flash'];
+      let geminiReply = null;
+
+      if (apiKey && !apiKey.includes('DEMO')) {
+        for (const model of candidateModels) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6500);
+            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+            const geminiRes = await fetch(geminiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (geminiRes.ok) {
+              const resJson = await geminiRes.json();
+              const candidate = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (candidate && candidate.trim()) {
+                geminiReply = candidate.trim();
+                break;
+              }
+            }
+          } catch (_) {
+            // Attempt next model or graceful fallback
+          }
+        }
+      }
+
+      if (geminiReply) {
+        return sendJson(200, {
+          success: true,
+          persona: 'AI Care Plus',
+          text: geminiReply,
+          reply: geminiReply,
+          source: 'gemini_api'
+        });
+      }
+
+      // Graceful high-quality fallback for rate limits, network interruptions, or timeout
+      const fallbackReply = generateCarePlusFallback(cleanQuestion, context);
+      return sendJson(200, {
+        success: true,
+        persona: 'AI Care Plus',
+        text: fallbackReply,
+        reply: fallbackReply,
+        source: 'care_plus_assistant'
+      });
     }
 
     // 6. Public contact & support inquiry endpoint
