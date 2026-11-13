@@ -96,6 +96,11 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
       return;
     }
 
+    if (allocationBreakdown && agreedAmountPaise >= allocationBreakdown.finStatus.totalPayablePaise) {
+      setError('Please Close the Bill');
+      return;
+    }
+
     if (totalAllocatedPaise !== agreedAmountPaise) {
       setError(
         'Settlement mismatch! The total payment allocation must exactly match the agreed settlement amount. Please correct the payment amounts before recording this payment.'

@@ -32,11 +32,11 @@ interface PartyDetailViewProps {
   onOpenCloseBill: (party: Party, bill: Bill) => void;
 }
 
-type ActivityFilter = 'All' | 'Bills' | 'Payments' | 'Closing Bills';
+type ActivityFilter = 'All' | 'Bills' | 'Payments' | 'Closing Bills' | 'Expired Bills';
 
 interface CombinedActivityItem {
   id: string;
-  type: 'bill' | 'payment' | 'closing';
+  type: 'bill' | 'payment' | 'closing' | 'expired';
   timestamp: number;
   dateStr: string;
   data: Bill | Payment | ClosingBill;
@@ -65,9 +65,13 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
   const partyBills = useMemo(() => bills.filter((b) => b.partyId === party.id), [bills, party.id]);
   const partyPayments = useMemo(() => payments.filter((p) => p.partyId === party.id), [payments, party.id]);
   const partyClosingBills = useMemo(() => closingBills.filter((c) => c.partyId === party.id), [closingBills, party.id]);
+  const partyExpiredBills = useMemo(
+    () => partyBills.filter((b) => b.status === 'Expired' || b.isExpired),
+    [partyBills]
+  );
 
   // Aggregate metrics for header
-  const activeBills = partyBills.filter((b) => b.status === 'Active');
+  const activeBills = partyBills.filter((b) => b.status === 'Active' && !b.isExpired);
   const totalPawnedPrincipalPaise = activeBills.reduce((acc, b) => acc + (b.currentPrincipalPaise || 0), 0);
 
   // 2. Build Combined Activity Stream
@@ -75,9 +79,10 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
     const stream: CombinedActivityItem[] = [];
 
     partyBills.forEach((bill) => {
+      const isExp = bill.status === 'Expired' || bill.isExpired;
       stream.push({
         id: `b_${bill.id}`,
-        type: 'bill',
+        type: isExp ? 'expired' : 'bill',
         timestamp: bill.createdAt,
         dateStr: bill.billDate,
         data: bill,
@@ -114,9 +119,10 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
 
     return combinedStream.filter((item) => {
       // Tab filter
-      if (filter === 'Bills' && item.type !== 'bill') return false;
+      if (filter === 'Bills' && (item.type !== 'bill' || (item.data as Bill).status === 'Expired' || (item.data as Bill).isExpired)) return false;
       if (filter === 'Payments' && item.type !== 'payment') return false;
       if (filter === 'Closing Bills' && item.type !== 'closing') return false;
+      if (filter === 'Expired Bills' && item.type !== 'expired') return false;
 
       // Search filter
       if (!q) return true;
@@ -265,19 +271,32 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
 
       {/* Filter and Search Bar */}
       <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Filters: All, Bills, Payments, Closing Bills */}
-        <div className="flex rounded-xl bg-white border border-slate-200 p-0.5 text-xs font-semibold shrink-0">
-          {(['All', 'Bills', 'Payments', 'Closing Bills'] as ActivityFilter[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setFilter(tab)}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                filter === tab ? 'bg-brand-900 text-white' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+        {/* Filters: All, Bills, Payments, Closing Bills, Expired Bills */}
+        <div className="flex flex-wrap rounded-xl bg-white border border-slate-200 p-0.5 text-xs font-semibold shrink-0 gap-0.5">
+          {(['All', 'Bills', 'Payments', 'Closing Bills', 'Expired Bills'] as ActivityFilter[]).map((tab) => {
+            const count =
+              tab === 'All'
+                ? combinedStream.length
+                : tab === 'Bills'
+                ? partyBills.filter((b) => b.status !== 'Expired' && !b.isExpired).length
+                : tab === 'Payments'
+                ? partyPayments.length
+                : tab === 'Closing Bills'
+                ? partyClosingBills.length
+                : partyExpiredBills.length;
+
+            return (
+              <button
+                key={tab}
+                onClick={() => setFilter(tab)}
+                className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  filter === tab ? 'bg-brand-900 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {tab} ({count})
+              </button>
+            );
+          })}
         </div>
 
         {/* In-view Search control beside filters */}

@@ -1,15 +1,15 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { X, CheckCircle, Calendar, Loader2, AlertTriangle, UserCheck } from 'lucide-react';
-import { Party, Bill, PaymentMode } from '../../types';
-import { evaluateBillStatus } from '../../utils/calculations';
+import { X, CheckCircle, Calendar, AlertTriangle, UserCheck, Banknote, Smartphone, MoreHorizontal } from 'lucide-react';
+import { Party, Bill, PaymentMode, AppSettings } from '../../types';
+import { evaluateBillStatus, rupeesToPaise } from '../../utils/calculations';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
 import { useAuth } from '../../context/AuthContext';
-import { SplitPaymentSelector, SplitPaymentState, parseInputRupeesToPaise } from '../payments/SplitPaymentSelector';
 import { useModalScrollLock } from '../../utils/modalScrollLock';
 
 interface CloseBillModalProps {
   party: Party;
   bill: Bill;
+  settings?: AppSettings;
   onClose: () => void;
   onConfirmClose: (data: any) => Promise<void>;
 }
@@ -17,6 +17,7 @@ interface CloseBillModalProps {
 export const CloseBillModal: React.FC<CloseBillModalProps> = ({
   party,
   bill,
+  settings,
   onClose,
   onConfirmClose,
 }) => {
@@ -26,16 +27,12 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
   useModalScrollLock(true, onClose);
 
   const [closingDate, setClosingDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  
-  // 3. User-Editable Closing Attribution Field
   const [closedByInput, setClosedByInput] = useState<string>('');
-  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const submittingRef = useRef(false);
 
-  // Determine current operator identity (Staff Member -> Shop Owner -> Authorized User)
-  // NEVER default to customer name!
+  // Determine current operator identity
   const defaultAttribution = useMemo(() => {
     let staffName = '';
     try {
@@ -45,7 +42,7 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
         localStorage.getItem('active_staff_name') ||
         '';
     } catch {
-      // Ignore storage access errors
+      // Ignore
     }
 
     if (staffName.trim()) {
@@ -60,45 +57,102 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
     return { name: 'Authorized User', role: 'authorized_user' as const };
   }, [shopProfile, currentUser]);
 
-  // Calculate actual financial status from trusted calculation engine
+  // Financial status calculation
   const status = useMemo(() => {
     return evaluateBillStatus(bill, closingDate);
   }, [bill, closingDate]);
 
-  // Actual current outstanding balance required to close
-  const previousOutstandingPaise = status.totalPayablePaise;
-
-  // 2. Three Permanently Visible Payment Mode Inputs (Cash, UPI, Net Banking)
-  // Initially allocate the computed outstanding to Cash by default
-  const [splitState, setSplitState] = useState<SplitPaymentState>({
-    cashRupees: (previousOutstandingPaise / 100).toString(),
-    upiRupees: '',
-    netBankingRupees: '',
-  });
-
-  // Keep Cash auto-synced with calculated outstanding if UPI and Net Banking remain empty
-  useEffect(() => {
-    const upiVal = parseInputRupeesToPaise(splitState.upiRupees);
-    const netVal = parseInputRupeesToPaise(splitState.netBankingRupees);
-
-    if (upiVal === 0 && netVal === 0) {
-      setSplitState((prev) => ({
-        ...prev,
-        cashRupees: (previousOutstandingPaise / 100).toString(),
-      }));
+  // Late fees calculations if applicable
+  const lateInterestFeesPaise = useMemo(() => {
+    if (bill.lateInterestFeesPaise) return bill.lateInterestFeesPaise;
+    if (settings?.lateInterestFeesEnabled && settings.lateInterestFeeRateOrAmount) {
+      return Math.round(bill.principalPaise * (settings.lateInterestFeeRateOrAmount / 100));
     }
-  }, [previousOutstandingPaise]);
+    return 0;
+  }, [bill, settings]);
 
-  const cashPaise = parseInputRupeesToPaise(splitState.cashRupees);
-  const upiPaise = parseInputRupeesToPaise(splitState.upiRupees);
-  const netBankingPaise = parseInputRupeesToPaise(splitState.netBankingRupees);
+  const lateClosingFeesPaise = useMemo(() => {
+    if (bill.lateClosingBillFeesPaise) return bill.lateClosingBillFeesPaise;
+    if (settings?.lateClosingFeesEnabled && settings.lateClosingFeeAmountPaise) {
+      return settings.lateClosingFeeAmountPaise;
+    }
+    return 0;
+  }, [bill, settings]);
 
-  // Formula: Total Paid = Cash + GPay/PhonePe + Net Banking
-  const totalPaidPaise = cashPaise + upiPaise + netBankingPaise;
+  // Authoritative total calculated closing amount in paise
+  const calculatedClosingPaise = status.totalPayablePaise + lateInterestFeesPaise + lateClosingFeesPaise;
 
-  // Formula: Remaining Outstanding = Previous Outstanding Balance - Total Paid
-  const remainingOutstandingPaise = previousOutstandingPaise - totalPaidPaise;
-  const isAllocationExact = totalPaidPaise === previousOutstandingPaise && totalPaidPaise > 0;
+  // Payment method selection modes:
+  // 'cash_full' (Cash checkbox ticked)
+  // 'gpay_full' (GPay checkbox ticked)
+  // 'split' (Neither checked: manual distribution)
+  const [paymentSelection, setPaymentSelection] = useState<'cash_full' | 'gpay_full' | 'split'>('cash_full');
+
+  // Manual split state (used when 'split' is active)
+  const [cashAmountRupees, setCashAmountRupees] = useState<string>((calculatedClosingPaise / 100).toString());
+  const [gpayAmountRupees, setGpayAmountRupees] = useState<string>('');
+
+  // Others payment mode
+  const [enableOthers, setEnableOthers] = useState<boolean>(false);
+  const [othersType, setOthersType] = useState<string>('Bank Transfer');
+  const [othersDescription, setOthersDescription] = useState<string>('');
+  const [othersAmountRupees, setOthersAmountRupees] = useState<string>('');
+
+  // When closing amount updates, update single-checkbox allocations
+  useEffect(() => {
+    if (paymentSelection === 'cash_full') {
+      setCashAmountRupees((calculatedClosingPaise / 100).toString());
+      setGpayAmountRupees('');
+    } else if (paymentSelection === 'gpay_full') {
+      setGpayAmountRupees((calculatedClosingPaise / 100).toString());
+      setCashAmountRupees('');
+    }
+  }, [calculatedClosingPaise, paymentSelection]);
+
+  const handleCashCheckboxToggle = (checked: boolean) => {
+    if (checked) {
+      setPaymentSelection('cash_full');
+      setCashAmountRupees((calculatedClosingPaise / 100).toString());
+      setGpayAmountRupees('');
+    } else {
+      setPaymentSelection('split');
+    }
+  };
+
+  const handleGpayCheckboxToggle = (checked: boolean) => {
+    if (checked) {
+      setPaymentSelection('gpay_full');
+      setGpayAmountRupees((calculatedClosingPaise / 100).toString());
+      setCashAmountRupees('');
+    } else {
+      setPaymentSelection('split');
+    }
+  };
+
+  // Convert inputs to integer paise
+  const allocatedCashPaise = useMemo(() => {
+    if (paymentSelection === 'cash_full') return calculatedClosingPaise;
+    if (paymentSelection === 'gpay_full') return 0;
+    const val = parseFloat(cashAmountRupees);
+    return isNaN(val) || val <= 0 ? 0 : rupeesToPaise(val);
+  }, [paymentSelection, calculatedClosingPaise, cashAmountRupees]);
+
+  const allocatedGpayPaise = useMemo(() => {
+    if (paymentSelection === 'gpay_full') return calculatedClosingPaise;
+    if (paymentSelection === 'cash_full') return 0;
+    const val = parseFloat(gpayAmountRupees);
+    return isNaN(val) || val <= 0 ? 0 : rupeesToPaise(val);
+  }, [paymentSelection, calculatedClosingPaise, gpayAmountRupees]);
+
+  const allocatedOthersPaise = useMemo(() => {
+    if (!enableOthers) return 0;
+    const val = parseFloat(othersAmountRupees);
+    return isNaN(val) || val <= 0 ? 0 : rupeesToPaise(val);
+  }, [enableOthers, othersAmountRupees]);
+
+  const totalAllocatedPaise = allocatedCashPaise + allocatedGpayPaise + allocatedOthersPaise;
+  const isSettlementExact = totalAllocatedPaise === calculatedClosingPaise && totalAllocatedPaise > 0;
+  const differencePaise = calculatedClosingPaise - totalAllocatedPaise;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,39 +164,29 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
       return;
     }
 
-    if (bill.partyId !== party.id) {
-      setError('Security validation failed: Bill does not belong to this customer.');
+    if (totalAllocatedPaise <= 0) {
+      setError('Cannot close this bill. Please allocate a valid payment amount.');
       return;
     }
 
-    // Strict Zero Payment Validation: Total Paid must be greater than ₹0.00
-    if (totalPaidPaise <= 0) {
-      setError('Cannot close this bill. Please enter a valid payment amount.');
+    if (!isSettlementExact) {
+      if (differencePaise > 0) {
+        setError(
+          `Payment is insufficient by ${formatCurrencyPaise(differencePaise)}. The sum of payment methods must exactly equal the calculated closing amount (${formatCurrencyPaise(calculatedClosingPaise)}).`
+        );
+      } else {
+        setError(
+          `Overpayment detected by ${formatCurrencyPaise(Math.abs(differencePaise))}. The sum of payment methods must exactly equal the calculated closing amount (${formatCurrencyPaise(calculatedClosingPaise)}).`
+        );
+      }
       return;
     }
 
-    // Strict Closure Validation: Total Paid must exactly equal the outstanding amount
-    if (totalPaidPaise < previousOutstandingPaise) {
-      setError(
-        `Payment is insufficient! Remaining outstanding: ${formatCurrencyPaise(
-          remainingOutstandingPaise
-        )}. Please allocate the full settlement amount before closing.`
-      );
+    if (enableOthers && (!othersType.trim() || !othersDescription.trim())) {
+      setError('Please provide the payment type and description for the Others payment method.');
       return;
     }
 
-    if (totalPaidPaise > previousOutstandingPaise) {
-      setError(
-        `Overpayment detected! Total paid exceeds the outstanding balance by ${formatCurrencyPaise(
-          totalPaidPaise - previousOutstandingPaise
-        )}. Please adjust payment amounts.`
-      );
-      return;
-    }
-
-    // 3. Accurate Audit Logging – Closed By Attribution
-    // Scenario D: Manually entered name (preserve exact entered string, trimming only leading/trailing spaces)
-    // Scenario A/B/C: Default to Authenticated Staff / Owner / Authorized User (NEVER the customer)
     const entered = closedByInput.trim();
     let finalClosedByIdentification = '';
     let finalRole: 'owner' | 'staff' | 'authorized_user' = defaultAttribution.role;
@@ -158,9 +202,9 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
     }
 
     const activeModes: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[] = [];
-    if (cashPaise > 0) activeModes.push('Cash');
-    if (upiPaise > 0) activeModes.push('GPay / PhonePe');
-    if (netBankingPaise > 0) activeModes.push('Net Banking');
+    if (allocatedCashPaise > 0) activeModes.push('Cash');
+    if (allocatedGpayPaise > 0) activeModes.push('GPay / PhonePe');
+    if (allocatedOthersPaise > 0) activeModes.push('Net Banking');
 
     const summaryMode: PaymentMode =
       activeModes.length > 1
@@ -180,27 +224,37 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
       await onConfirmClose({
         billId: bill.id,
         partyId: party.id,
+        partyName: party.name,
+        partyPhone: party.phone,
         closingDate,
         paymentMode: summaryMode,
         paymentModes: activeModes,
         splitAllocations: {
-          cashPaise,
-          upiPaise,
-          netBankingPaise,
+          cashPaise: allocatedCashPaise,
+          upiPaise: allocatedGpayPaise,
+          netBankingPaise: allocatedOthersPaise,
         },
-        cashPaise,
-        upiPaise,
-        netBankingPaise,
-        totalPaidPaise,
-        totalAllocatedPaise: totalPaidPaise,
-        agreedSettlementPaise: previousOutstandingPaise,
-        finalSettlementAmountPaise: previousOutstandingPaise,
+        cashPaise: allocatedCashPaise,
+        upiPaise: allocatedGpayPaise,
+        netBankingPaise: allocatedOthersPaise,
+        totalPaidPaise: totalAllocatedPaise,
+        totalAllocatedPaise,
+        agreedSettlementPaise: calculatedClosingPaise,
+        finalSettlementAmountPaise: calculatedClosingPaise,
         finalOutstandingPaise: 0,
+        lateInterestFeesPaise,
+        lateClosingBillFeesPaise: lateClosingFeesPaise,
+        cashCheckboxSelected: paymentSelection === 'cash_full',
+        gpayCheckboxSelected: paymentSelection === 'gpay_full',
+        othersPaymentType: enableOthers ? othersType : undefined,
+        othersDescription: enableOthers ? othersDescription : undefined,
         closedBy: finalClosedByIdentification,
         closedByUid,
         closedByRole: finalRole,
         closingTransactionId,
-        notes: 'Pawn pledge redeemed in full, items returned to customer',
+        notes: enableOthers
+          ? `Closed with ${othersType}: ${othersDescription}`
+          : 'Pawn pledge redeemed in full, items returned to customer',
       });
       onClose();
     } catch (err: any) {
@@ -224,10 +278,10 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-close-bill-title"
-        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn flex flex-col my-auto max-h-[90vh]"
+        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn flex flex-col my-auto max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header (Shrink-0) */}
+        {/* Header */}
         <div className="bg-gradient-to-r from-brand-950 to-slate-900 text-white p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-slate-800 text-white flex items-center justify-center font-bold">
@@ -235,7 +289,7 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
             </div>
             <div>
               <h3 id="modal-close-bill-title" className="text-base font-bold text-white">
-                Redeem & Close Bill
+                Settle & Close Pledge Bill
               </h3>
               <p className="text-xs text-slate-300">
                 Bill {bill.billNumber} • Customer: {party.name}
@@ -276,15 +330,15 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Initial Loan Date:</span>
+              <span className="text-slate-500">Pledge Date:</span>
               <span className="font-mono text-brand-950">{formatDate(bill.billDate)}</span>
             </div>
           </div>
 
-          {/* Financial Status Breakdown */}
+          {/* Financial Breakdown */}
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
             <div className="flex justify-between text-slate-600">
-              <span>Initial Principal:</span>
+              <span>Original Principal:</span>
               <span className="font-bold text-brand-950 font-mono">
                 {formatCurrencyPaise(bill.principalPaise)}
               </span>
@@ -296,20 +350,36 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
               </span>
             </div>
             <div className="flex justify-between text-slate-600">
-              <span>Accrued Interest ({status.daysElapsed} days elapsed):</span>
+              <span>Accumulated Interest ({status.daysElapsed} days):</span>
               <span className="font-bold text-accent-600 font-mono">
                 {formatCurrencyPaise(status.accruedInterestPaise)}
               </span>
             </div>
+            {lateInterestFeesPaise > 0 && (
+              <div className="flex justify-between text-slate-600">
+                <span>Late Interest Fees:</span>
+                <span className="font-bold text-amber-600 font-mono">
+                  {formatCurrencyPaise(lateInterestFeesPaise)}
+                </span>
+              </div>
+            )}
+            {lateClosingFeesPaise > 0 && (
+              <div className="flex justify-between text-slate-600">
+                <span>Late Closing Bill Fees:</span>
+                <span className="font-bold text-amber-600 font-mono">
+                  {formatCurrencyPaise(lateClosingFeesPaise)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-slate-900 pt-2 border-t border-slate-200 text-sm font-bold">
-              <span>Computed Settlement Total:</span>
+              <span>Final Settlement Amount:</span>
               <span className="text-emerald-700 font-extrabold text-base font-mono">
-                {formatCurrencyPaise(previousOutstandingPaise)}
+                {formatCurrencyPaise(calculatedClosingPaise)}
               </span>
             </div>
           </div>
 
-          {/* Closing Date Selection */}
+          {/* Closing Date */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
               Closing Date *
@@ -321,21 +391,190 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
                 required
                 value={closingDate}
                 onChange={(e) => setClosingDate(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 font-mono"
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 font-mono"
               />
             </div>
           </div>
 
-          {/* 2. Streamlined Payment Intake – No Agreed Settlement Total Field */}
-          <SplitPaymentSelector
-            agreedAmountPaise={previousOutstandingPaise}
-            state={splitState}
-            onChange={setSplitState}
-            isCloseBill={true}
-            label="Payment Intake (Split Across Modes)"
-          />
+          {/* Closing Payment Methods Section */}
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-brand-950">
+                Closing Payment Methods
+              </span>
+              <span className="text-[11px] text-slate-500">
+                Exact Settlement Required
+              </span>
+            </div>
 
-          {/* 3. Accurate Audit Logging – Closed By Attribution */}
+            {/* Checkbox 1: Cash (Full Amount) */}
+            <label className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-200 hover:border-emerald-300 transition-colors cursor-pointer">
+              <div className="flex items-center space-x-2.5">
+                <input
+                  type="checkbox"
+                  checked={paymentSelection === 'cash_full'}
+                  onChange={(e) => handleCashCheckboxToggle(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
+                />
+                <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-800">
+                  <Banknote className="w-4 h-4 text-emerald-600" />
+                  <span>Cash (Full Amount)</span>
+                </div>
+              </div>
+              <span className="text-xs font-mono font-bold text-slate-700">
+                {paymentSelection === 'cash_full'
+                  ? formatCurrencyPaise(calculatedClosingPaise)
+                  : '₹0.00'}
+              </span>
+            </label>
+
+            {/* Checkbox 2: GPay (Full Amount) */}
+            <label className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-200 hover:border-blue-300 transition-colors cursor-pointer">
+              <div className="flex items-center space-x-2.5">
+                <input
+                  type="checkbox"
+                  checked={paymentSelection === 'gpay_full'}
+                  onChange={(e) => handleGpayCheckboxToggle(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                />
+                <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-800">
+                  <Smartphone className="w-4 h-4 text-blue-600" />
+                  <span>GPay / UPI (Full Amount)</span>
+                </div>
+              </div>
+              <span className="text-xs font-mono font-bold text-slate-700">
+                {paymentSelection === 'gpay_full'
+                  ? formatCurrencyPaise(calculatedClosingPaise)
+                  : '₹0.00'}
+              </span>
+            </label>
+
+            {/* Split Payment: When neither Cash nor GPay checkbox is checked */}
+            {paymentSelection === 'split' && (
+              <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200 space-y-3 animate-fadeIn">
+                <p className="text-[11px] font-bold text-blue-900">
+                  Split Payment: Enter Cash & GPay amounts manually
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                      Cash Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={cashAmountRupees}
+                      onChange={(e) => setCashAmountRupees(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                      GPay Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={gpayAmountRupees}
+                      onChange={(e) => setGpayAmountRupees(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Option: Others Payment Method */}
+            <div className="pt-2 border-t border-slate-200">
+              <label className="flex items-center space-x-2 cursor-pointer mb-2">
+                <input
+                  type="checkbox"
+                  checked={enableOthers}
+                  onChange={(e) => {
+                    setEnableOthers(e.target.checked);
+                    if (!e.target.checked) setOthersAmountRupees('');
+                  }}
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
+                  <MoreHorizontal className="w-4 h-4 text-purple-600" />
+                  <span>Others Payment Method</span>
+                </span>
+              </label>
+
+              {enableOthers && (
+                <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-200 space-y-2.5 animate-fadeIn">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-600 mb-0.5">
+                        Payment Type *
+                      </label>
+                      <input
+                        type="text"
+                        value={othersType}
+                        onChange={(e) => setOthersType(e.target.value)}
+                        placeholder="e.g. Bank Transfer, Cheque"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-600 mb-0.5">
+                        Amount (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={othersAmountRupees}
+                        onChange={(e) => setOthersAmountRupees(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-0.5">
+                      Description / Reference *
+                    </label>
+                    <input
+                      type="text"
+                      value={othersDescription}
+                      onChange={(e) => setOthersDescription(e.target.value)}
+                      placeholder="Cheque No, Bank Ref ID, etc."
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Allocation Status Indicator */}
+            <div className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
+              isSettlementExact
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                : 'bg-rose-50 border-rose-300 text-rose-900'
+            }`}>
+              <div>
+                <p className="font-bold">
+                  {isSettlementExact ? '✓ Exact Settlement Matched' : '⚠ Settlement Allocation Mismatch'}
+                </p>
+                <p className="text-[11px] opacity-80">
+                  Allocated: {formatCurrencyPaise(totalAllocatedPaise)} / Required: {formatCurrencyPaise(calculatedClosingPaise)}
+                </p>
+              </div>
+              <span className="font-mono font-extrabold text-sm">
+                {differencePaise === 0
+                  ? '₹0.00 diff'
+                  : `${differencePaise > 0 ? '-' : '+'}${formatCurrencyPaise(Math.abs(differencePaise))}`}
+              </span>
+            </div>
+          </div>
+
+          {/* Closed By Attribution */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1 flex items-center justify-between">
               <span>Closed By</span>
@@ -350,11 +589,11 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
                 value={closedByInput}
                 onChange={(e) => setClosedByInput(e.target.value)}
                 placeholder={`Defaults to: ${defaultAttribution.name}`}
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 font-medium text-brand-950"
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 font-medium text-brand-950"
               />
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
-              Recorded closing identification:{' '}
+              Recorded closing attribution:{' '}
               <strong className="text-brand-950 font-mono">
                 {closedByInput.trim()
                   ? `Closed By: ${closedByInput.trim()}`
@@ -363,14 +602,7 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
             </p>
           </div>
 
-          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs flex items-start space-x-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
-            <span>
-              Closing this bill marks the pledge as redeemed. All payment records and audit signatures are permanently preserved.
-            </span>
-          </div>
-
-          {/* Action Buttons (Always visible at the bottom) */}
+          {/* Action Buttons */}
           <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
             <button
               type="button"
@@ -381,17 +613,11 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={loading || !isAllocationExact || totalPaidPaise <= 0}
-              className="px-6 py-2.5 bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              disabled={loading || !isSettlementExact}
+              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5 cursor-pointer"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Closing...</span>
-                </>
-              ) : (
-                <span>Confirm Bill Closure</span>
-              )}
+              <CheckCircle className="w-4 h-4" />
+              <span>{loading ? 'Closing Bill...' : 'Confirm Settle & Close'}</span>
             </button>
           </div>
         </form>

@@ -1,23 +1,21 @@
 import React from 'react';
 import {
   Home,
+  FileText,
   CreditCard,
-  History,
-  MessageSquare,
+  CheckCircle,
+  Users,
+  Clock,
+  TrendingUp,
   Settings,
   LogOut,
   X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ShopLogoBadge } from '../common/ShopLogoBadge';
+import { NavigationTab } from '../../types';
 
-export type NavigationTab =
-  | 'home'
-  | 'parties'
-  | 'subscription'
-  | 'subscription-history'
-  | 'chat'
-  | 'settings';
+export type { NavigationTab };
 
 interface SidebarProps {
   currentTab: NavigationTab;
@@ -36,11 +34,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const ownerName = shopProfile?.ownerName || 'Owner';
 
+  // Strict 8-item application navigation
   const menuItems: { id: NavigationTab; label: string; icon: any }[] = [
     { id: 'home', label: 'Home', icon: Home },
-    { id: 'subscription', label: 'Subscription', icon: CreditCard },
-    { id: 'subscription-history', label: 'Subscription History', icon: History },
-    { id: 'chat', label: 'Chat Box', icon: MessageSquare },
+    { id: 'bills', label: 'Bills', icon: FileText },
+    { id: 'payments', label: 'Payments', icon: CreditCard },
+    { id: 'closing', label: 'Closing Bills', icon: CheckCircle },
+    { id: 'parties', label: 'Parties', icon: Users },
+    { id: 'expired', label: 'Expired Bills', icon: Clock },
+    { id: 'analytics', label: 'Analytics', icon: TrendingUp },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

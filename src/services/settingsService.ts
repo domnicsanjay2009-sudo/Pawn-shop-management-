@@ -10,6 +10,12 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   defaultGoldPercentage: 2.0,
   defaultSilverPercentage: 3.0,
   defaultOthersPercentage: 4.0,
+  lateInterestFeesEnabled: false,
+  lateInterestFeeRateOrAmount: 1.0,
+  lateClosingFeesEnabled: false,
+  lateClosingFeeAmountPaise: 5000,
+  lateClosingFeeDurationMonths: 12,
+  expiredBillsDurationYears: 2,
   updatedAt: Date.now(),
 };
 

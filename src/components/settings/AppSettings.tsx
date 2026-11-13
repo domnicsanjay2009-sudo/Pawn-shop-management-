@@ -19,7 +19,8 @@ import {
   Send,
   RefreshCw,
   FileCheck,
-  ExternalLink
+  ExternalLink,
+  MessageSquare
 } from 'lucide-react';
 import { AppSettings as IAppSettings, InterestDuration } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -27,11 +28,13 @@ import { useAppLock } from '../../context/AppLockContext';
 import { useToast } from '../common/Toast';
 import { ShopLogoBadge } from '../common/ShopLogoBadge';
 import { PrivacyPolicyModal } from '../legal/PrivacyPolicyModal';
+import { ChatContainer } from '../chat/ChatContainer';
 import { saveSettings } from '../../services/settingsService';
 import { updateShopProfile } from '../../services/authService';
 import { processUploadFile } from '../../services/fileStorageService';
 import { hashCredential, authenticateWithBiometrics } from '../../services/appLockService';
 import { isValidPIN, isValidPassword, isValidIndianPhone, isValidEmail } from '../../utils/validators';
+import { rupeesToPaise } from '../../utils/calculations';
 
 interface AppSettingsProps {
   settings: IAppSettings;
@@ -300,6 +303,82 @@ export const AppSettings: React.FC<AppSettingsProps> = ({
   const [silverRate, setSilverRate] = useState<number>(settings.defaultSilverPercentage || 3.0);
   const [othersRate, setOthersRate] = useState<number>(settings.defaultOthersPercentage || 4.0);
   const [savingSettings, setSavingSettings] = useState(false);
+
+  // Late Fees Settings State (A. Late Interest Fees, B. Late Closing Bill Fees)
+  const [lateInterestEnabled, setLateInterestEnabled] = useState<boolean>(
+    Boolean(settings.lateInterestFeesEnabled)
+  );
+  const [lateInterestRate, setLateInterestRate] = useState<number>(
+    settings.lateInterestFeeRateOrAmount ?? 1.0
+  );
+  const [lateClosingEnabled, setLateClosingEnabled] = useState<boolean>(
+    Boolean(settings.lateClosingFeesEnabled)
+  );
+  const [lateClosingAmountRupees, setLateClosingAmountRupees] = useState<string>(
+    ((settings.lateClosingFeeAmountPaise ?? 5000) / 100).toString()
+  );
+  const [lateClosingDurationMonths, setLateClosingDurationMonths] = useState<number>(
+    settings.lateClosingFeeDurationMonths ?? 12
+  );
+  const [savingLateFees, setSavingLateFees] = useState(false);
+
+  // Expired Bills Settings State (Duration: 2, 3, 4, 5, 6, Custom)
+  const [expiredYears, setExpiredYears] = useState<number>(
+    settings.expiredBillsDurationYears ?? 2
+  );
+  const [savingExpiredSettings, setSavingExpiredSettings] = useState(false);
+
+  // Chat Box Expand State
+  const [showChatBox, setShowChatBox] = useState(false);
+
+  const handleSaveLateFees = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shopProfile?.shopId) return;
+
+    setSavingLateFees(true);
+    try {
+      const closingFeePaise = rupeesToPaise(parseFloat(lateClosingAmountRupees) || 0);
+      const updated: IAppSettings = {
+        ...settings,
+        lateInterestFeesEnabled: lateInterestEnabled,
+        lateInterestFeeRateOrAmount: Number(lateInterestRate),
+        lateClosingFeesEnabled: lateClosingEnabled,
+        lateClosingFeeAmountPaise: closingFeePaise,
+        lateClosingFeeDurationMonths: Number(lateClosingDurationMonths),
+        updatedAt: Date.now(),
+      };
+
+      await saveSettings(shopProfile.shopId, updated);
+      onUpdateSettings(updated);
+      showToast('Late fees settings saved successfully.', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to save late fees.', 'error');
+    } finally {
+      setSavingLateFees(false);
+    }
+  };
+
+  const handleSaveExpiredSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shopProfile?.shopId) return;
+
+    setSavingExpiredSettings(true);
+    try {
+      const updated: IAppSettings = {
+        ...settings,
+        expiredBillsDurationYears: Number(expiredYears),
+        updatedAt: Date.now(),
+      };
+
+      await saveSettings(shopProfile.shopId, updated);
+      onUpdateSettings(updated);
+      showToast(`Expired bills duration updated to ${expiredYears} Years.`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to save expired bills settings.', 'error');
+    } finally {
+      setSavingExpiredSettings(false);
+    }
+  };
 
   // App Lock Setup State (PIN vs Password: Strictly Mutually Exclusive)
   const [lockMode, setLockMode] = useState<'pin' | 'password' | 'none'>(config.type);
@@ -890,6 +969,280 @@ export const AppSettings: React.FC<AppSettingsProps> = ({
           </button>
         </div>
       </form>
+
+      {/* LATE FEES SETTINGS (Directly below Default Interest Settings) */}
+      <form
+        onSubmit={handleSaveLateFees}
+        className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6"
+      >
+        <div className="flex items-center space-x-3 border-b border-slate-100 pb-4">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-brand-950">Late Fees Settings</h3>
+            <p className="text-xs text-slate-500">
+              Configure independent penalty rules for overdue payment cycles and long-unsettled loans.
+            </p>
+          </div>
+        </div>
+
+        {/* Section A: Late Interest Fees */}
+        <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-brand-950">
+                A. Late Interest Fees
+              </span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Applied when payment due month has passed without partial repayment.
+              </p>
+            </div>
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={lateInterestEnabled}
+                onChange={(e) => setLateInterestEnabled(e.target.checked)}
+                className="w-4 h-4 text-accent-600 rounded focus:ring-accent-500 cursor-pointer"
+              />
+              <span className={`text-xs font-bold ${lateInterestEnabled ? 'text-accent-600' : 'text-slate-400'}`}>
+                {lateInterestEnabled ? 'ENABLED (ON)' : 'DISABLED (OFF)'}
+              </span>
+            </label>
+          </div>
+
+          {lateInterestEnabled && (
+            <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fadeIn">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase text-slate-600 mb-1">
+                  Applicable Rate (%) *
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={lateInterestRate}
+                    onChange={(e) => setLateInterestRate(parseFloat(e.target.value) || 0)}
+                    className="w-full pl-3 pr-8 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold text-brand-950 focus:ring-2 focus:ring-accent-500"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">%</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase text-slate-600 mb-1">
+                  Rule Trigger
+                </label>
+                <p className="text-xs text-slate-700 font-medium py-2 px-3 bg-white border border-slate-200 rounded-xl">
+                  Applied after grace period per overdue monthly term
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Section B: Late Closing Bill Fees */}
+        <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-brand-950">
+                B. Late Closing Bill Fees
+              </span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Applied to bills that remain unsettled beyond the configured duration.
+              </p>
+            </div>
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={lateClosingEnabled}
+                onChange={(e) => setLateClosingEnabled(e.target.checked)}
+                className="w-4 h-4 text-accent-600 rounded focus:ring-accent-500 cursor-pointer"
+              />
+              <span className={`text-xs font-bold ${lateClosingEnabled ? 'text-accent-600' : 'text-slate-400'}`}>
+                {lateClosingEnabled ? 'ENABLED (ON)' : 'DISABLED (OFF)'}
+              </span>
+            </label>
+          </div>
+
+          {lateClosingEnabled && (
+            <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fadeIn">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase text-slate-600 mb-1">
+                  Fixed Fee Amount (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={lateClosingAmountRupees}
+                  onChange={(e) => setLateClosingAmountRupees(e.target.value)}
+                  placeholder="e.g. 50"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold text-brand-950 focus:ring-2 focus:ring-accent-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase text-slate-600 mb-1">
+                  Duration Threshold (Months) *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="120"
+                  value={lateClosingDurationMonths}
+                  onChange={(e) => setLateClosingDurationMonths(parseInt(e.target.value, 10) || 12)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold text-brand-950 focus:ring-2 focus:ring-accent-500 font-mono"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button
+            type="submit"
+            disabled={savingLateFees}
+            className="px-6 py-2.5 bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-70 cursor-pointer"
+          >
+            {savingLateFees ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span>Save Late Fees Settings</span>
+          </button>
+        </div>
+      </form>
+
+      {/* EXPIRED BILLS SETTINGS */}
+      <form
+        onSubmit={handleSaveExpiredSettings}
+        className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6"
+      >
+        <div className="flex items-center space-x-3 border-b border-slate-100 pb-4">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-brand-950">Expired Bills Settings</h3>
+            <p className="text-xs text-slate-500">
+              Configure the aging duration before untouched pledge bills transition to the Expired ledger.
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-2">
+            Duration for Expired Bills
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {[2, 3, 4, 5, 6].map((yr) => (
+              <button
+                key={yr}
+                type="button"
+                onClick={() => setExpiredYears(yr)}
+                className={`py-3 px-4 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                  expiredYears === yr
+                    ? 'bg-purple-900 text-white border-purple-900 shadow-sm'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                {yr} Years
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 p-4 bg-purple-50/50 rounded-2xl border border-purple-100 text-xs text-purple-950 space-y-1">
+            <p className="font-bold">Expiration Rule Invariant:</p>
+            <p className="text-[11px] text-purple-800">
+              A bill becomes eligible for expiration only when it has remained open for {expiredYears} years from its original opening date with <strong>zero payments recorded</strong> (untouched). Expired bills are frozen and stop calculating interest until explicitly republished.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button
+            type="submit"
+            disabled={savingExpiredSettings}
+            className="px-6 py-2.5 bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center space-x-2 disabled:opacity-70 cursor-pointer"
+          >
+            {savingExpiredSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span>Save Expired Bills Duration</span>
+          </button>
+        </div>
+      </form>
+
+      {/* MAIL SETTINGS */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-4">
+        <div className="flex items-center space-x-3 border-b border-slate-100 pb-4">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+            <Mail className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-brand-950">Mail Settings</h3>
+            <p className="text-xs text-slate-500">
+              Verified backend notification delivery, transaction alerts, and customer communication.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+            <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+              Official Shop Email
+            </span>
+            <p className="font-mono font-bold text-brand-950 text-sm mt-0.5">
+              domnicsanjay2009@gmail.com
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Used for account recovery, Razorpay receipts, and administrator notifications.
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+            <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+              Delivery Infrastructure
+            </span>
+            <div className="flex items-center space-x-1.5 mt-0.5 text-emerald-700 font-bold">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Firebase Cloud Auth & Serverless Dispatch</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Zero plaintext SMTP credentials stored in client browsers.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* CHAT BOX & ADMIN COMMUNICATION (Integrated inside Settings) */}
+      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+        <div
+          onClick={() => setShowChatBox(!showChatBox)}
+          className="p-6 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-brand-950">
+                Customer Care &amp; Support Chat Box
+              </h3>
+              <p className="text-xs text-slate-500">
+                Direct secure 2-way messaging with the Administrator Panel.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+          >
+            {showChatBox ? 'Hide Chat Box' : 'Open Chat Box'}
+          </button>
+        </div>
+
+        {showChatBox && (
+          <div className="p-6 border-t border-slate-200 animate-fadeIn">
+            <ChatContainer />
+          </div>
+        )}
+      </div>
 
       {/* App Lock Settings: PIN / Password & Biometrics */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">

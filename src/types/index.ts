@@ -3,7 +3,16 @@
 export type InterestDuration = 'Daily' | 'Weekly' | 'Monthly' | 'Yearly';
 export type ItemCategory = 'Gold' | 'Silver' | 'Others';
 export type WeightUnit = 'g' | 'mg' | 'tola' | 'pavan';
-export type BillStatus = 'Active' | 'Closed';
+export type BillStatus = 'Active' | 'Closed' | 'Expired';
+export type NavigationTab =
+  | 'home'
+  | 'bills'
+  | 'payments'
+  | 'closing'
+  | 'parties'
+  | 'expired'
+  | 'analytics'
+  | 'settings';
 export type PlanType = 'Yearly' | 'Yearly Premium' | 'Complimentary Premium' | 'Free';
 export type SubscriptionStatus = 'Approved' | 'Pending' | 'Failed' | 'Expired' | 'Cancelled' | 'Revoked' | 'Paused';
 export type EntitlementSource = 'RAZORPAY' | 'ADMIN_GRANTED' | 'COMPLIMENTARY' | 'SYSTEM';
@@ -46,6 +55,12 @@ export interface AppSettings {
   defaultGoldPercentage: number;
   defaultSilverPercentage: number;
   defaultOthersPercentage: number;
+  lateInterestFeesEnabled?: boolean;
+  lateInterestFeeRateOrAmount?: number;
+  lateClosingFeesEnabled?: boolean;
+  lateClosingFeeAmountPaise?: number;
+  lateClosingFeeDurationMonths?: number;
+  expiredBillsDurationYears?: number;
   updatedAt: number;
 }
 
@@ -101,6 +116,24 @@ export interface Bill {
   closingTransactionId?: string;
   closingNotes?: string;
   finalOutstandingPaise?: number;
+  
+  // Expired & Late Fees tracking
+  isExpired?: boolean;
+  expiredAt?: number;
+  frozenOutstandingPaise?: number;
+  republishedAt?: number;
+  republishedBy?: string;
+  republishHistory?: Array<{
+    republishedAt: number;
+    republishedBy?: string;
+    originalBillDate: string;
+    interestCalculatedPaise: number;
+    lateInterestFeesPaise?: number;
+    lateClosingFeesPaise?: number;
+    totalCalculatedOutstandingPaise: number;
+  }>;
+  lateInterestFeesPaise?: number;
+  lateClosingBillFeesPaise?: number;
   
   createdAt: number;
   updatedAt: number;
@@ -163,6 +196,12 @@ export interface ClosingBill {
   closedByUid?: string;
   closedByRole?: 'owner' | 'staff' | 'admin' | 'authorized_user';
   closingTransactionId?: string;
+  lateInterestFeesPaise?: number;
+  lateClosingBillFeesPaise?: number;
+  cashCheckboxSelected?: boolean;
+  gpayCheckboxSelected?: boolean;
+  othersPaymentType?: string;
+  othersDescription?: string;
 }
 
 export interface Subscription {

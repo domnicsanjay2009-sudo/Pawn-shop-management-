@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { Payment, PaymentMode, Bill, PaymentModeAllocation } from '../types';
-import { allocatePayment } from '../utils/calculations';
+import { allocatePayment, evaluateBillStatus } from '../utils/calculations';
 
 const PAYMENTS_COLLECTION = 'payments';
 const BILLS_COLLECTION = 'bills';
@@ -56,6 +56,20 @@ export async function recordPayment(
 
       if (bill.status === 'Closed') {
         throw new Error('Cannot add payments to an already closed bill');
+      }
+
+      if (bill.status === 'Expired') {
+        throw new Error('Cannot add payments to an expired bill. Please republish the bill first.');
+      }
+
+      if (!input.amountPaise || input.amountPaise <= 0) {
+        throw new Error('Payment amount must be greater than zero');
+      }
+
+      // Check total payable outstanding amount
+      const billStatus = evaluateBillStatus(bill, input.paymentDate);
+      if (input.amountPaise >= billStatus.totalPayablePaise) {
+        throw new Error('Please Close the Bill');
       }
 
       // Calculate allocation using the agreed financial rule

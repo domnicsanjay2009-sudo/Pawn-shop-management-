@@ -15,17 +15,23 @@ import { AppLockScreen } from './components/auth/AppLockScreen';
 import { Sidebar, NavigationTab } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { DashboardHome } from './components/home/DashboardHome';
+import { BillsView } from './components/bills/BillsView';
+import { PaymentsView } from './components/payments/PaymentsView';
+import { ClosingBillsView } from './components/closing/ClosingBillsView';
+import { ExpiredBillsView } from './components/expired/ExpiredBillsView';
+import { AnalyticsView } from './components/analytics/AnalyticsView';
 import { AddPartyForm } from './components/parties/AddPartyForm';
 import { PartyList } from './components/parties/PartyList';
 import { PartyDetailView } from './components/parties/PartyDetailView';
 import { AddBillForm } from './components/bills/AddBillForm';
 import { AddPaymentModal } from './components/payments/AddPaymentModal';
 import { CloseBillModal } from './components/closing/CloseBillModal';
+import { BillReceiptModal } from './components/common/BillReceiptModal';
+import { AppSettings } from './components/settings/AppSettings';
 import { SubscriptionPlans } from './components/subscription/SubscriptionPlans';
 import { SubscriptionPausedScreen } from './components/subscription/SubscriptionPausedScreen';
-import { SubscriptionHistory } from './components/subscription/SubscriptionHistory';
-import { ChatContainer } from './components/chat/ChatContainer';
-import { AppSettings } from './components/settings/AppSettings';
+import { MoreVertical } from 'lucide-react';
+import { republishExpiredBill } from './services/expiredBillService';
 
 // Public legal & information pages for Razorpay verification & compliance
 import { AboutUsPage } from './components/public/AboutUsPage';
@@ -151,11 +157,20 @@ const MainApplication: React.FC = () => {
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [preselectedCustomerForBill, setPreselectedCustomerForBill] = useState<Party | null>(null);
 
-  // Modals
+  // Modals & Receipts
   const [showAddPaymentModal, setShowAddPaymentModal] = useState(false);
   const [showCloseBillModal, setShowCloseBillModal] = useState(false);
   const [modalParty, setModalParty] = useState<Party | null>(null);
   const [modalBill, setModalBill] = useState<Bill | null>(null);
+  const [receiptBill, setReceiptBill] = useState<Bill | null>(null);
+  const [receiptParty, setReceiptParty] = useState<Party | null>(null);
+  const [receiptClosing, setReceiptClosing] = useState<ClosingBill | null>(null);
+
+  const handleViewReceipt = (bill: Bill, party?: Party, closing?: ClosingBill) => {
+    setReceiptBill(bill);
+    setReceiptParty(party || activeParties.find((p) => p.id === bill.partyId) || null);
+    setReceiptClosing(closing || activeClosingBills.find((c) => c.billId === bill.id) || null);
+  };
 
   // Load real production data from Firestore
   const loadProductionData = useCallback(async () => {
@@ -326,6 +341,59 @@ const MainApplication: React.FC = () => {
     }
   };
 
+  const handleRepublishBill = async (bill: Bill) => {
+    if (!shopProfile?.shopId) return;
+    try {
+      const actorName = shopProfile.ownerName || currentUser?.displayName || 'Authorized User';
+      const actorUid = currentUser?.uid;
+      const updated = await republishExpiredBill(shopProfile.shopId, bill, settings, actorName, actorUid);
+      setBills((prev) => prev.map((b) => (b.id === bill.id ? updated : b)));
+      showToast(`Bill ${bill.billNumber} successfully republished and returned to active ledger.`, 'success');
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to republish bill.', 'error');
+    }
+  };
+
+  const handleOpenAddBillFromHome = () => {
+    setPreselectedCustomerForBill(null);
+    setSelectedParty(null);
+    setCurrentTab('bills');
+  };
+
+  const handleOpenAddPaymentFromHome = () => {
+    const candidateParty =
+      activeParties.find((p) => activeBills.some((b) => b.partyId === p.id && b.status === 'Active')) ||
+      activeParties[0];
+
+    if (!candidateParty) {
+      showToast('Please add a customer and create a bill first.', 'info');
+      setCurrentTab('parties');
+      return;
+    }
+
+    const candidateBill = activeBills.find(
+      (b) => b.partyId === candidateParty.id && b.status === 'Active'
+    );
+
+    setModalParty(candidateParty);
+    setModalBill(candidateBill || null);
+    setShowAddPaymentModal(true);
+  };
+
+  const handleOpenAddClosingFromHome = () => {
+    const candidateBill = activeBills.find((b) => b.status === 'Active');
+    if (!candidateBill) {
+      showToast('No active bills available to close.', 'info');
+      return;
+    }
+    const candidateParty = activeParties.find((p) => p.id === candidateBill.partyId);
+    if (!candidateParty) return;
+
+    setModalParty(candidateParty);
+    setModalBill(candidateBill);
+    setShowCloseBillModal(true);
+  };
+
   // Public Pages (accessible without login, on direct URL, and after browser refresh)
   if (normalizedPath === '/about-us') {
     return <AboutUsPage onNavigate={navigateTo} />;
@@ -415,10 +483,12 @@ const MainApplication: React.FC = () => {
 
   const titles: Record<NavigationTab, string> = {
     home: 'Shop Dashboard',
-    parties: 'Customers & Parties',
-    subscription: 'Subscription & Plans',
-    'subscription-history': 'Subscription History',
-    chat: 'Customer Care & AI Chat',
+    bills: 'Pledge Bills Ledger',
+    payments: 'Payment Transactions',
+    closing: 'Closing Bills & Settlements',
+    parties: 'Customer Directory',
+    expired: 'Expired Bills Vault',
+    analytics: 'Financial Analytics & Cashflow',
     settings: 'App Settings',
   };
 
@@ -438,7 +508,7 @@ const MainApplication: React.FC = () => {
         onCloseMobile={() => setMobileSidebarOpen(false)}
       />
 
-      {/* Right Main Workspace */}
+      {/* Right Main Workspace (70-75% on desktop) */}
       <div className="flex-1 lg:pl-72 flex flex-col min-h-screen min-w-0">
         <Header
           title={titles[currentTab] || 'Workspace'}
@@ -446,25 +516,74 @@ const MainApplication: React.FC = () => {
         />
 
         <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto">
+          {/* 1. Home Module */}
           {currentTab === 'home' && (
             <DashboardHome
               parties={activeParties}
               bills={activeBills}
               payments={activePayments}
               closingBills={activeClosingBills}
+              settings={settings}
+              onNavigateToBills={() => setCurrentTab('bills')}
               onNavigateToParties={() => setCurrentTab('parties')}
               onSelectParty={(party) => {
                 setSelectedParty(party);
                 setCurrentTab('parties');
               }}
-              onOpenAddBill={() => {
-                setPreselectedCustomerForBill(null);
+              onOpenAddBill={handleOpenAddBillFromHome}
+              onOpenAddPayment={handleOpenAddPaymentFromHome}
+              onOpenAddClosingBill={handleOpenAddClosingFromHome}
+              onOpenAddParty={() => {
                 setSelectedParty(null);
                 setCurrentTab('parties');
               }}
+              onViewReceipt={handleViewReceipt}
             />
           )}
 
+          {/* 2. Bills Module */}
+          {currentTab === 'bills' && (
+            <BillsView
+              bills={activeBills}
+              parties={activeParties}
+              settings={settings}
+              onSaveBill={handleSaveBill}
+              onOpenPayment={(p, b) => {
+                setModalParty(p);
+                setModalBill(b);
+                setShowAddPaymentModal(true);
+              }}
+              onOpenCloseBill={(p, b) => {
+                setModalParty(p);
+                setModalBill(b);
+                setShowCloseBillModal(true);
+              }}
+              onViewReceipt={handleViewReceipt}
+            />
+          )}
+
+          {/* 3. Payments Module */}
+          {currentTab === 'payments' && (
+            <PaymentsView
+              payments={activePayments}
+              bills={activeBills}
+              parties={activeParties}
+              onOpenPaymentModal={handleOpenAddPaymentFromHome}
+            />
+          )}
+
+          {/* 4. Closing Bills Module */}
+          {currentTab === 'closing' && (
+            <ClosingBillsView
+              closingBills={activeClosingBills}
+              bills={activeBills}
+              parties={activeParties}
+              onOpenCloseBillModal={handleOpenAddClosingFromHome}
+              onViewReceipt={handleViewReceipt}
+            />
+          )}
+
+          {/* 5. Parties Module */}
           {currentTab === 'parties' && (
             <div className="space-y-6">
               {selectedParty ? (
@@ -475,7 +594,6 @@ const MainApplication: React.FC = () => {
                   closingBills={activeClosingBills}
                   onClose={() => setSelectedParty(null)}
                   onOpenAddBill={(p) => {
-                    // Navigate directly to Add Pledge Bill creation with this customer preselected
                     setPreselectedCustomerForBill(p);
                     setSelectedParty(null);
                     setCurrentTab('parties');
@@ -515,19 +633,28 @@ const MainApplication: React.FC = () => {
             </div>
           )}
 
-          {currentTab === 'subscription' && (
-            <SubscriptionPlans
-              onNavigate={navigateTo}
-              onPaymentSuccess={() => {
-                setCurrentTab('home');
-              }}
+          {/* 6. Expired Bills Module */}
+          {currentTab === 'expired' && (
+            <ExpiredBillsView
+              bills={activeBills}
+              parties={activeParties}
+              settings={settings}
+              onRepublishBill={handleRepublishBill}
+              onViewReceipt={handleViewReceipt}
             />
           )}
 
-          {currentTab === 'subscription-history' && <SubscriptionHistory />}
+          {/* 7. Analytics Module */}
+          {currentTab === 'analytics' && (
+            <AnalyticsView
+              bills={activeBills}
+              payments={activePayments}
+              closingBills={activeClosingBills}
+              parties={activeParties}
+            />
+          )}
 
-          {currentTab === 'chat' && <ChatContainer />}
-
+          {/* 8. Settings Module */}
           {currentTab === 'settings' && (
             <AppSettings
               settings={settings}
@@ -537,6 +664,17 @@ const MainApplication: React.FC = () => {
           )}
         </main>
       </div>
+
+      {/* Mobile Bottom Floating 3-Dot Menu Button */}
+      <button
+        type="button"
+        onClick={() => setMobileSidebarOpen(true)}
+        className="lg:hidden fixed bottom-5 right-5 z-40 bg-brand-950 text-white p-3.5 rounded-full shadow-2xl border border-slate-700 flex items-center justify-center cursor-pointer hover:bg-slate-900 transition-transform active:scale-95"
+        aria-label="Open Navigation Menu"
+        title="Open Navigation Menu"
+      >
+        <MoreVertical className="w-5 h-5 text-accent-400" />
+      </button>
 
       {/* Modals */}
       {showAddPaymentModal && modalParty && (
@@ -556,11 +694,27 @@ const MainApplication: React.FC = () => {
         <CloseBillModal
           party={modalParty}
           bill={modalBill}
+          settings={settings}
           onClose={() => {
             setShowCloseBillModal(false);
             setModalBill(null);
           }}
           onConfirmClose={handleCloseBill}
+        />
+      )}
+
+      {/* Watermarked Bill Receipt Modal */}
+      {receiptBill && (
+        <BillReceiptModal
+          bill={receiptBill}
+          party={receiptParty || undefined}
+          shopProfile={shopProfile}
+          closingBill={receiptClosing}
+          onClose={() => {
+            setReceiptBill(null);
+            setReceiptParty(null);
+            setReceiptClosing(null);
+          }}
         />
       )}
     </div>
