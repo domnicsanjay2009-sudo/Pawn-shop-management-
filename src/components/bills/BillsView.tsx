@@ -16,6 +16,7 @@ import { Bill, Party, AppSettings } from '../../types';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
 import { evaluateBillStatus } from '../../utils/calculations';
 import { AddBillForm } from './AddBillForm';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 
 interface BillsViewProps {
   bills: Bill[];
@@ -210,8 +211,13 @@ export const BillsView: React.FC<BillsViewProps> = ({
                         {b.billNumber}
                       </td>
                       <td className="p-4">
-                        <p className="font-bold text-brand-950">{b.partyName}</p>
-                        <p className="text-[11px] text-slate-400 font-mono">{b.partyPhone}</p>
+                        <div className="flex items-center space-x-3">
+                          <CustomerAvatar photoUrl={p?.photoUrl} name={b.partyName} size="sm" />
+                          <div>
+                            <p className="font-bold text-brand-950">{b.partyName}</p>
+                            <p className="text-[11px] text-slate-400 font-mono">{b.partyPhone}</p>
+                          </div>
+                        </div>
                       </td>
                       <td className="p-4 max-w-xs">
                         <span className="font-bold text-slate-900">{b.itemCategory}</span>

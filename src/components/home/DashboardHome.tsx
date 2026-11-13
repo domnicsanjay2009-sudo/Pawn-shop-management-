@@ -26,6 +26,7 @@ import { Party, Bill, Payment, ClosingBill, AppSettings } from '../../types';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
 import { useAuth } from '../../context/AuthContext';
 import { ShopLogoBadge } from '../common/ShopLogoBadge';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
@@ -452,7 +453,10 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
                         }}
                         className="p-3.5 font-medium text-slate-800 hover:text-accent-600 cursor-pointer"
                       >
-                        {b.partyName}
+                        <div className="flex items-center space-x-2.5">
+                          <CustomerAvatar photoUrl={p?.photoUrl} name={b.partyName} size="xs" />
+                          <span className="font-bold">{b.partyName}</span>
+                        </div>
                       </td>
                       <td className="p-3.5 text-slate-600">
                         <span className="font-semibold text-brand-950">{b.itemCategory}</span> -{' '}

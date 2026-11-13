@@ -15,6 +15,7 @@ import { Bill, Party, AppSettings } from '../../types';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
 import { isBillEligibleForExpiry, republishExpiredBill } from '../../services/expiredBillService';
 import { evaluateBillStatus } from '../../utils/calculations';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 
 interface ExpiredBillsViewProps {
   bills: Bill[];
@@ -194,8 +195,13 @@ export const ExpiredBillsView: React.FC<ExpiredBillsViewProps> = ({
                         {b.billNumber}
                       </td>
                       <td className="p-4">
-                        <p className="font-bold text-brand-950">{b.partyName}</p>
-                        <p className="text-[11px] text-slate-400 font-mono">{b.partyPhone}</p>
+                        <div className="flex items-center space-x-3">
+                          <CustomerAvatar photoUrl={p?.photoUrl} name={b.partyName} size="sm" />
+                          <div>
+                            <p className="font-bold text-brand-950">{b.partyName}</p>
+                            <p className="text-[11px] text-slate-400 font-mono">{b.partyPhone}</p>
+                          </div>
+                        </div>
                       </td>
                       <td className="p-4">
                         <span className="font-bold text-slate-900">{b.itemCategory}</span>

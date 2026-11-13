@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { ClosingBill, Bill, Party } from '../../types';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 
 interface ClosingBillsViewProps {
   closingBills: ClosingBill[];
@@ -164,8 +165,13 @@ export const ClosingBillsView: React.FC<ClosingBillsViewProps> = ({
                         {c.billNumber}
                       </td>
                       <td className="p-4">
-                        <p className="font-bold text-brand-950">{c.partyName}</p>
-                        <p className="text-[11px] text-slate-400 font-mono">{c.partyPhone}</p>
+                        <div className="flex items-center space-x-3">
+                          <CustomerAvatar photoUrl={matchingParty?.photoUrl} name={c.partyName} size="sm" />
+                          <div>
+                            <p className="font-bold text-brand-950">{c.partyName}</p>
+                            <p className="text-[11px] text-slate-400 font-mono">{c.partyPhone}</p>
+                          </div>
+                        </div>
                       </td>
                       <td className="p-4 font-mono font-extrabold text-emerald-600 text-sm">
                         {formatCurrencyPaise(c.finalSettlementAmountPaise)}

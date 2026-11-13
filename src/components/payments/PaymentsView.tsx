@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Payment, Party, Bill } from '../../types';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
+import { CustomerAvatar } from '../common/CustomerAvatar';
 
 interface PaymentsViewProps {
   payments: Payment[];
@@ -176,14 +177,22 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredPayments.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-4 pl-6 font-mono text-slate-600">
-                      {formatDate(p.paymentDate)}
-                    </td>
-                    <td className="p-4 font-bold text-brand-950">
-                      {p.partyName}
-                    </td>
+                filteredPayments.map((p) => {
+                  const matchingParty = parties.find((pt) => pt.id === p.partyId);
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-4 pl-6 font-mono text-slate-600">
+                        {formatDate(p.paymentDate)}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center space-x-3">
+                          <CustomerAvatar photoUrl={matchingParty?.photoUrl} name={p.partyName} size="sm" />
+                          <div>
+                            <p className="font-bold text-brand-950">{p.partyName}</p>
+                            {matchingParty?.phone && <p className="text-[11px] text-slate-400 font-mono">{matchingParty.phone}</p>}
+                          </div>
+                        </div>
+                      </td>
                     <td className="p-4 font-mono font-bold text-accent-600">
                       {p.billNumber}
                     </td>
@@ -207,8 +216,9 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
                       {p.notes || '—'}
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              })
+            )}
             </tbody>
           </table>
         </div>

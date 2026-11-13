@@ -190,6 +190,9 @@ export interface ClosingBill {
   netBankingPaise?: number;
   agreedSettlementPaise?: number;
   totalAllocatedPaise?: number;
+  baseOutstandingPaise?: number;
+  adjustmentType?: 'plus' | 'minus';
+  adjustmentAmountPaise?: number;
   notes?: string;
   closedAt: number;
   closedBy?: string;

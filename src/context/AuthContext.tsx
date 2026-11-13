@@ -427,11 +427,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentUser(null);
       setShopProfile(null);
       setIsSessionValid(false);
-      setPendingVerificationUser(res.user);
+      setPendingVerificationUser(null);
       setAuthBanner({
-        type: res.verificationSent ? 'success' : 'info',
-        message: 'Account created successfully! Please verify your email address before logging in.',
-        prefillEmail: res.email,
+        type: 'success',
+        message: 'Account created successfully! You can now log in with your email and password.',
+        prefillEmail: res.email || data.email,
       });
     }
     return res;

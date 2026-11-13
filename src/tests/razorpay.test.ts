@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 import { PLANS } from '../services/subscriptionService';
 
 describe('Razorpay Integration & Security Verification Suite', () => {

@@ -43,19 +43,19 @@ describe('Firebase Authentication Unit Tests & Error Mappings', () => {
     it('should map auth/invalid-credential to a helpful user message', () => {
       const err = { code: 'auth/invalid-credential' };
       const formatted = formatAuthError(err);
-      expect(formatted).toContain('Invalid email or password');
+      expect(formatted).toBe('Incorrect password. Please try again.');
     });
 
     it('should map auth/wrong-password correctly', () => {
       const err = { code: 'auth/wrong-password' };
       const formatted = formatAuthError(err);
-      expect(formatted).toBe('Incorrect password. Please try again or click Forgot Password.');
+      expect(formatted).toBe('Incorrect password. Please try again.');
     });
 
     it('should map auth/user-not-found correctly', () => {
       const err = { code: 'auth/user-not-found' };
       const formatted = formatAuthError(err);
-      expect(formatted).toBe('This mail ID was not found. Please create an account first.');
+      expect(formatted).toBe('This mail ID is not found. Please create an account first.');
     });
 
     it('should map auth/email-already-in-use correctly', () => {

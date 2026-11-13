@@ -694,6 +694,7 @@ const MainApplication: React.FC = () => {
         <CloseBillModal
           party={modalParty}
           bill={modalBill}
+          allPartyBills={activeBills.filter((b) => b.partyId === modalParty.id)}
           settings={settings}
           onClose={() => {
             setShowCloseBillModal(false);

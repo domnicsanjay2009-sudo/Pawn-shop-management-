@@ -28,7 +28,25 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
     return allPartyBills.filter((b) => b.status === 'Active');
   }, [allPartyBills]);
 
+  const [billSearchQuery, setBillSearchQuery] = useState('');
   const [selectedBillId, setSelectedBillId] = useState(bill?.id || (activeBills[0]?.id || ''));
+
+  const filteredActiveBills = useMemo(() => {
+    const q = billSearchQuery.trim().toLowerCase();
+    if (!q) return activeBills;
+    return activeBills.filter(
+      (b) =>
+        b.billNumber.toLowerCase().includes(q) ||
+        b.itemCategory.toLowerCase().includes(q) ||
+        b.itemDescription.toLowerCase().includes(q)
+    );
+  }, [activeBills, billSearchQuery]);
+
+  useEffect(() => {
+    if (filteredActiveBills.length > 0 && !filteredActiveBills.some((b) => b.id === selectedBillId)) {
+      setSelectedBillId(filteredActiveBills[0].id);
+    }
+  }, [filteredActiveBills, selectedBillId]);
   const [amountRupees, setAmountRupees] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
@@ -199,22 +217,44 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-6 space-y-4 flex-1 overflow-y-auto">
-          {/* Bill Selection */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
-              Select Pledge Bill *
-            </label>
+          {/* Bill Selection & Ornament Search */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                Select Pledge Bill *
+              </label>
+              {activeBills.length > 1 && (
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {filteredActiveBills.length} of {activeBills.length} active bills
+                </span>
+              )}
+            </div>
+
+            {activeBills.length > 1 && (
+              <input
+                type="text"
+                value={billSearchQuery}
+                onChange={(e) => setBillSearchQuery(e.target.value)}
+                placeholder='Search customer bills by ornament ("Chain", "Ring", "B-1006")...'
+                className="w-full px-3 py-1.5 bg-slate-100/70 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-accent-500 mb-1"
+              />
+            )}
+
             <select
               required
               value={selectedBillId}
               onChange={(e) => setSelectedBillId(e.target.value)}
               className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-brand-950 focus:outline-none focus:ring-2 focus:ring-accent-500"
             >
-              {activeBills.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.billNumber} - {b.itemCategory} ({formatCurrencyPaise(b.currentPrincipalPaise)} principal)
-                </option>
-              ))}
+              {filteredActiveBills.length === 0 ? (
+                <option value="" disabled>No active bills match your ornament search</option>
+              ) : (
+                filteredActiveBills.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.billNumber} - {b.itemCategory} ({b.itemDescription || 'Collateral'}) • {formatCurrencyPaise(b.currentPrincipalPaise)} principal
+                  </option>
+                ))
+              )}
             </select>
           </div>
 

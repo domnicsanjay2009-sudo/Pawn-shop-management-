@@ -9,6 +9,7 @@ import { useModalScrollLock } from '../../utils/modalScrollLock';
 interface CloseBillModalProps {
   party: Party;
   bill: Bill;
+  allPartyBills?: Bill[];
   settings?: AppSettings;
   onClose: () => void;
   onConfirmClose: (data: any) => Promise<void>;
@@ -17,6 +18,7 @@ interface CloseBillModalProps {
 export const CloseBillModal: React.FC<CloseBillModalProps> = ({
   party,
   bill,
+  allPartyBills,
   settings,
   onClose,
   onConfirmClose,
@@ -25,6 +27,29 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
   
   // 1. Background Interaction Lock & Keyboard Accessibility
   useModalScrollLock(true, onClose);
+
+  const [selectedBillId, setSelectedBillId] = useState(bill.id);
+  const [billSearchQuery, setBillSearchQuery] = useState('');
+
+  const activeBills = useMemo(() => {
+    const list = (allPartyBills && allPartyBills.length > 0) ? allPartyBills : [bill];
+    return list.filter((b) => b.status === 'Active');
+  }, [allPartyBills, bill]);
+
+  const filteredBills = useMemo(() => {
+    const q = billSearchQuery.trim().toLowerCase();
+    if (!q) return activeBills;
+    return activeBills.filter(
+      (b) =>
+        b.billNumber.toLowerCase().includes(q) ||
+        b.itemCategory.toLowerCase().includes(q) ||
+        b.itemDescription.toLowerCase().includes(q)
+    );
+  }, [activeBills, billSearchQuery]);
+
+  const currentBill = useMemo(() => {
+    return activeBills.find((b) => b.id === selectedBillId) || bill;
+  }, [activeBills, selectedBillId, bill]);
 
   const [closingDate, setClosingDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [closedByInput, setClosedByInput] = useState<string>('');
@@ -59,28 +84,50 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
 
   // Financial status calculation
   const status = useMemo(() => {
-    return evaluateBillStatus(bill, closingDate);
-  }, [bill, closingDate]);
+    return evaluateBillStatus(currentBill, closingDate);
+  }, [currentBill, closingDate]);
 
   // Late fees calculations if applicable
   const lateInterestFeesPaise = useMemo(() => {
-    if (bill.lateInterestFeesPaise) return bill.lateInterestFeesPaise;
+    if (currentBill.lateInterestFeesPaise) return currentBill.lateInterestFeesPaise;
     if (settings?.lateInterestFeesEnabled && settings.lateInterestFeeRateOrAmount) {
-      return Math.round(bill.principalPaise * (settings.lateInterestFeeRateOrAmount / 100));
+      return Math.round(currentBill.principalPaise * (settings.lateInterestFeeRateOrAmount / 100));
     }
     return 0;
-  }, [bill, settings]);
+  }, [currentBill, settings]);
 
   const lateClosingFeesPaise = useMemo(() => {
-    if (bill.lateClosingBillFeesPaise) return bill.lateClosingBillFeesPaise;
+    if (currentBill.lateClosingBillFeesPaise) return currentBill.lateClosingBillFeesPaise;
     if (settings?.lateClosingFeesEnabled && settings.lateClosingFeeAmountPaise) {
       return settings.lateClosingFeeAmountPaise;
     }
     return 0;
-  }, [bill, settings]);
+  }, [currentBill, settings]);
 
-  // Authoritative total calculated closing amount in paise
-  const calculatedClosingPaise = status.totalPayablePaise + lateInterestFeesPaise + lateClosingFeesPaise;
+  // Base calculated closing amount in paise (principal + interest + late fees)
+  const baseClosingPaise = status.totalPayablePaise + lateInterestFeesPaise + lateClosingFeesPaise;
+
+  // Mandatory Part 8: Plus (+) / Minus (-) Settlement Adjustment State
+  const [adjustmentType, setAdjustmentType] = useState<'none' | 'plus' | 'minus'>('none');
+  const [adjustmentAmountRupees, setAdjustmentAmountRupees] = useState<string>('');
+
+  const adjustmentPaise = useMemo(() => {
+    if (adjustmentType === 'none') return 0;
+    const parsed = parseFloat(adjustmentAmountRupees);
+    return isNaN(parsed) || parsed <= 0 ? 0 : rupeesToPaise(parsed);
+  }, [adjustmentType, adjustmentAmountRupees]);
+
+  // Final Authoritative total calculated closing amount in paise:
+  // Final Closing Amount = Outstanding Amount + Positive Adjustment - Negative Adjustment
+  const calculatedClosingPaise = useMemo(() => {
+    if (adjustmentType === 'plus') {
+      return baseClosingPaise + adjustmentPaise;
+    }
+    if (adjustmentType === 'minus') {
+      return Math.max(0, baseClosingPaise - adjustmentPaise);
+    }
+    return baseClosingPaise;
+  }, [baseClosingPaise, adjustmentType, adjustmentPaise]);
 
   // Payment method selection modes:
   // 'cash_full' (Cash checkbox ticked)
@@ -159,7 +206,7 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
     if (submittingRef.current || loading) return;
     setError('');
 
-    if (bill.status === 'Closed') {
+    if (currentBill.status === 'Closed') {
       setError('This bill is already closed.');
       return;
     }
@@ -215,14 +262,14 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
         ? 'Bank Transfer'
         : 'Cash';
 
-    const closingTransactionId = `tx_close_${bill.id}_${Date.now()}`;
+    const closingTransactionId = `tx_close_${currentBill.id}_${Date.now()}`;
     const closedByUid = currentUser?.uid || '';
 
     submittingRef.current = true;
     setLoading(true);
     try {
       await onConfirmClose({
-        billId: bill.id,
+        billId: currentBill.id,
         partyId: party.id,
         partyName: party.name,
         partyPhone: party.phone,
@@ -241,6 +288,9 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
         totalAllocatedPaise,
         agreedSettlementPaise: calculatedClosingPaise,
         finalSettlementAmountPaise: calculatedClosingPaise,
+        baseOutstandingPaise: baseClosingPaise,
+        adjustmentType: adjustmentType === 'none' ? undefined : adjustmentType,
+        adjustmentAmountPaise: adjustmentPaise,
         finalOutstandingPaise: 0,
         lateInterestFeesPaise,
         lateClosingBillFeesPaise: lateClosingFeesPaise,
@@ -315,23 +365,57 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
 
         {/* Scrollable Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+          {/* Customer & Bill Selection with Ornament Search */}
+          {activeBills.length > 1 && (
+            <div className="space-y-1.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                  Select Bill to Settle &amp; Close *
+                </label>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {filteredBills.length} of {activeBills.length} active bills
+                </span>
+              </div>
+
+              <input
+                type="text"
+                value={billSearchQuery}
+                onChange={(e) => setBillSearchQuery(e.target.value)}
+                placeholder='Search customer bills by ornament ("Chain", "Ring", "Necklace", "B-1006")...'
+                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-accent-500 mb-1"
+              />
+
+              <select
+                value={selectedBillId}
+                onChange={(e) => setSelectedBillId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-brand-950 focus:outline-none focus:ring-2 focus:ring-accent-500"
+              >
+                {filteredBills.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.billNumber} - {b.itemCategory} ({b.itemDescription || 'Collateral'}) • {formatCurrencyPaise(b.currentPrincipalPaise)} principal
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Collateral details summary */}
           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
             <div className="flex justify-between">
               <span className="text-slate-500">Pledged Collateral:</span>
               <span className="font-semibold text-brand-950">
-                {bill.itemCategory} - {bill.itemDescription}
+                {currentBill.itemCategory} - {currentBill.itemDescription}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Weight:</span>
               <span className="font-semibold text-brand-950">
-                Gross {bill.grossWeight}{bill.weightUnit} / Net {bill.netWeight}{bill.weightUnit}
+                Gross {currentBill.grossWeight}{currentBill.weightUnit} / Net {currentBill.netWeight}{currentBill.weightUnit}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Pledge Date:</span>
-              <span className="font-mono text-brand-950">{formatDate(bill.billDate)}</span>
+              <span className="font-mono text-brand-950">{formatDate(currentBill.billDate)}</span>
             </div>
           </div>
 
@@ -340,7 +424,7 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
             <div className="flex justify-between text-slate-600">
               <span>Original Principal:</span>
               <span className="font-bold text-brand-950 font-mono">
-                {formatCurrencyPaise(bill.principalPaise)}
+                {formatCurrencyPaise(currentBill.principalPaise)}
               </span>
             </div>
             <div className="flex justify-between text-slate-600">
@@ -377,6 +461,86 @@ export const CloseBillModal: React.FC<CloseBillModalProps> = ({
                 {formatCurrencyPaise(calculatedClosingPaise)}
               </span>
             </div>
+          </div>
+
+          {/* Mandatory Part 8: Settlement Adjustment (+ / -) */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-brand-950 uppercase tracking-wider">
+                Settlement Adjustment (+ / -)
+              </label>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Mandatory Plus / Minus Discount or Fee
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAdjustmentType('none');
+                  setAdjustmentAmountRupees('');
+                }}
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all border ${
+                  adjustmentType === 'none'
+                    ? 'bg-white border-slate-400 text-brand-950 shadow-xs'
+                    : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200/60'
+                }`}
+              >
+                No Adjustment
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdjustmentType('plus')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all border flex items-center justify-center space-x-1 ${
+                  adjustmentType === 'plus'
+                    ? 'bg-amber-500 border-amber-600 text-white shadow-xs'
+                    : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-amber-50'
+                }`}
+              >
+                <span>+ PLUS (Extra Fee)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdjustmentType('minus')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all border flex items-center justify-center space-x-1 ${
+                  adjustmentType === 'minus'
+                    ? 'bg-emerald-600 border-emerald-700 text-white shadow-xs'
+                    : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-emerald-50'
+                }`}
+              >
+                <span>- MINUS (Discount)</span>
+              </button>
+            </div>
+
+            {adjustmentType !== 'none' && (
+              <div className="pt-1 space-y-2 animate-fadeIn">
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">₹</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={adjustmentAmountRupees}
+                    onChange={(e) => setAdjustmentAmountRupees(e.target.value)}
+                    placeholder={`Enter ${adjustmentType === 'plus' ? 'extra charge' : 'discount/waiver'} amount in rupees`}
+                    className="w-full pl-8 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-accent-500"
+                  />
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex flex-wrap items-center justify-between text-xs gap-1">
+                  <span className="text-slate-600">
+                    Base: <strong className="font-mono text-brand-950">{formatCurrencyPaise(baseClosingPaise)}</strong>
+                  </span>
+                  <span className={adjustmentType === 'plus' ? 'text-amber-600 font-bold font-mono' : 'text-emerald-600 font-bold font-mono'}>
+                    {adjustmentType === 'plus' ? `+ ${formatCurrencyPaise(adjustmentPaise)}` : `- ${formatCurrencyPaise(adjustmentPaise)}`}
+                  </span>
+                  <span className="font-extrabold text-brand-950">
+                    Payable: <strong className="font-mono text-emerald-600">{formatCurrencyPaise(calculatedClosingPaise)}</strong>
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Closing Date */}

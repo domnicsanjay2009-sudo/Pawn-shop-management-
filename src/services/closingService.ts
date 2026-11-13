@@ -24,6 +24,9 @@ export interface CloseBillInput {
   paymentMode: PaymentMode;
   notes?: string;
   finalSettlementAmountPaise?: number; // optional override if agreed with customer
+  baseOutstandingPaise?: number;
+  adjustmentType?: 'plus' | 'minus';
+  adjustmentAmountPaise?: number;
   paymentModes?: ('Cash' | 'GPay / PhonePe' | 'Net Banking')[];
   splitAllocations?: PaymentModeAllocation;
   cashPaise?: number;
@@ -77,17 +80,29 @@ export async function closeBill(
       }
 
       const financialStatus = evaluateBillStatus(bill, input.closingDate);
-      const expectedOutstanding = financialStatus.totalPayablePaise;
+      const basePayable = input.baseOutstandingPaise !== undefined
+        ? input.baseOutstandingPaise
+        : (financialStatus.totalPayablePaise + (bill.lateInterestFeesPaise || 0) + (bill.lateClosingBillFeesPaise || 0));
+
+      let expectedSettlement = input.finalSettlementAmountPaise !== undefined
+        ? input.finalSettlementAmountPaise
+        : (input.agreedSettlementPaise !== undefined ? input.agreedSettlementPaise : basePayable);
+
+      if (input.adjustmentType === 'plus' && input.adjustmentAmountPaise) {
+        expectedSettlement = basePayable + input.adjustmentAmountPaise;
+      } else if (input.adjustmentType === 'minus' && input.adjustmentAmountPaise) {
+        expectedSettlement = Math.max(0, basePayable - input.adjustmentAmountPaise);
+      }
 
       // Settlement Reconciliation
-      if (totalPaid < expectedOutstanding) {
-        const remaining = expectedOutstanding - totalPaid;
+      if (totalPaid < expectedSettlement) {
+        const remaining = expectedSettlement - totalPaid;
         throw new Error(`Payment is insufficient! Remaining outstanding: ₹${(remaining / 100).toFixed(2)}. Please allocate the full settlement amount before closing.`);
       }
 
-      if (totalPaid > expectedOutstanding) {
-        const excess = totalPaid - expectedOutstanding;
-        throw new Error(`Overpayment detected! Total paid exceeds the outstanding balance by ₹${(excess / 100).toFixed(2)}. Please adjust payment amounts.`);
+      if (totalPaid > expectedSettlement) {
+        const excess = totalPaid - expectedSettlement;
+        throw new Error(`Overpayment detected! Total paid exceeds the agreed settlement balance by ₹${(excess / 100).toFixed(2)}. Please adjust payment amounts.`);
       }
 
       // Accurate Audit Logging - Closed By Attribution (NEVER default to customer)
@@ -111,7 +126,10 @@ export async function closeBill(
         initialPrincipalPaise: bill.principalPaise,
         outstandingPrincipalPaise: bill.currentPrincipalPaise,
         accruedInterestPaise: financialStatus.accruedInterestPaise,
-        finalSettlementAmountPaise: expectedOutstanding,
+        baseOutstandingPaise: basePayable,
+        adjustmentType: input.adjustmentType,
+        adjustmentAmountPaise: input.adjustmentAmountPaise,
+        finalSettlementAmountPaise: expectedSettlement,
         totalPaidPaise: totalPaid,
         finalOutstandingPaise: 0,
         closingDate: input.closingDate,
@@ -121,7 +139,7 @@ export async function closeBill(
         cashPaise: input.cashPaise ?? 0,
         upiPaise: input.upiPaise ?? 0,
         netBankingPaise: input.netBankingPaise ?? 0,
-        agreedSettlementPaise: input.agreedSettlementPaise ?? expectedOutstanding,
+        agreedSettlementPaise: expectedSettlement,
         totalAllocatedPaise: totalPaid,
         notes: input.notes?.trim() || '',
         closedAt: Date.now(),

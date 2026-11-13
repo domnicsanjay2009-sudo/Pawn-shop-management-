@@ -15,3 +15,14 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare module '*/api/index.js' {
+  const handler: (req: any, res: any) => Promise<void>;
+  export default handler;
+}
+
+declare module '../../api/index.js' {
+  const handler: (req: any, res: any) => Promise<void>;
+  export default handler;
+}
+

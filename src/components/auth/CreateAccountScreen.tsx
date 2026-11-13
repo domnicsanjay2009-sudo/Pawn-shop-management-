@@ -74,10 +74,8 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({ onBack
       if (!result.success) {
         setErrorMessage(result.error || 'Failed to create account.');
       } else {
-        showToast(
-          'Account created successfully! Please verify your email address before logging in.',
-          'success'
-        );
+        showToast('Account created successfully! You can now log in.', 'success');
+        onBackToLogin();
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'An unexpected error occurred during registration.');

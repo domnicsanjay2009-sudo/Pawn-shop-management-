@@ -96,11 +96,11 @@ export function formatAuthError(error: any): string {
     case 'auth/configuration-not-found':
       return 'Firebase Authentication is not yet activated in your Firebase Console. Please go to Firebase Console > Build > Authentication, click "Get Started", and enable the Email/Password provider.';
     case 'auth/user-not-found':
-      return 'This mail ID was not found. Please create an account first.';
+      return 'This mail ID is not found. Please create an account first.';
     case 'auth/wrong-password':
-      return 'Incorrect password. Please try again or click Forgot Password.';
+      return 'Incorrect password. Please try again.';
     case 'auth/invalid-credential':
-      return 'Invalid email or password. Please check your credentials or click Forgot Password.';
+      return 'Incorrect password. Please try again.';
     case 'auth/email-already-in-use':
       return 'An account with this email ID already exists. Please login instead.';
     case 'auth/invalid-email':
@@ -110,7 +110,7 @@ export function formatAuthError(error: any): string {
     case 'auth/too-many-requests':
       return 'Access to this account has been temporarily disabled due to too many attempts. Please wait a few minutes and try again.';
     case 'auth/network-request-failed':
-      return 'Network connection failed. Please check your internet connection and try again.';
+      return 'Network connection failed. Please check your internet connection.';
     case 'auth/expired-action-code':
       return 'This verification link has expired. Please request a new verification email.';
     case 'auth/invalid-action-code':
@@ -124,7 +124,7 @@ export function formatAuthError(error: any): string {
     case 'auth/credential-already-in-use':
       return 'This email address is already registered to another account.';
     case 'auth/timeout':
-      return error?.message || 'The authentication request timed out. Please check your connection and try again.';
+      return 'Network connection failed. Please check your internet connection.';
     default:
       return error?.message || 'Authentication failed. Please check your credentials.';
   }
@@ -232,10 +232,11 @@ async function sendVerificationEmailWithFallback(user: User): Promise<void> {
  */
 export async function loginShopOwner(email: string, password: string): Promise<LoginResult> {
   loginInProgress = true;
+  const cleanEmail = email.trim().toLowerCase();
   try {
     await authPersistenceReady;
     const userCredential = await withTimeout(
-      signInWithEmailAndPassword(auth, email.trim(), password),
+      signInWithEmailAndPassword(auth, cleanEmail, password),
       AUTH_REQUEST_TIMEOUT_MS,
       'Login request timed out. Please check your internet connection and try again.'
     );
@@ -243,13 +244,12 @@ export async function loginShopOwner(email: string, password: string): Promise<L
 
     if (!user.emailVerified) {
       try {
-        await reload(user);
+        await withTimeout(reload(user), 2500, 'Reload timeout');
       } catch {
         // Proceed with current flag if reload fails transiently
       }
     }
 
-    // Check Firebase Authentication's actual emailVerified property
     if (!user.emailVerified) {
       clearLoginSession();
       setPendingVerificationUid(user.uid);
@@ -262,8 +262,31 @@ export async function loginShopOwner(email: string, password: string): Promise<L
     }
 
     recordLoginSession(user.uid);
+    clearPendingVerificationUid();
     return { success: true, user };
   } catch (error: any) {
+    const code = error?.code || '';
+    if (code === 'auth/network-request-failed' || code === 'auth/timeout') {
+      return { success: false, error: 'Network connection failed. Please check your internet connection.' };
+    }
+    if (code === 'auth/user-not-found') {
+      return { success: false, error: 'This mail ID is not found. Please create an account first.' };
+    }
+    if (code === 'auth/wrong-password') {
+      return { success: false, error: 'Incorrect password. Please try again.' };
+    }
+    if (code === 'auth/invalid-credential') {
+      try {
+        const methods = await fetchSignInMethodsForEmail(auth, cleanEmail);
+        if (!methods || methods.length === 0) {
+          return { success: false, error: 'This mail ID is not found. Please create an account first.' };
+        } else {
+          return { success: false, error: 'Incorrect password. Please try again.' };
+        }
+      } catch {
+        return { success: false, error: 'Incorrect password. Please try again.' };
+      }
+    }
     return { success: false, error: formatAuthError(error) };
   } finally {
     loginInProgress = false;
