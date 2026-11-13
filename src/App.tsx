@@ -26,6 +26,13 @@ import { SubscriptionHistory } from './components/subscription/SubscriptionHisto
 import { ChatContainer } from './components/chat/ChatContainer';
 import { AppSettings } from './components/settings/AppSettings';
 
+// Public legal & information pages for Razorpay verification & compliance
+import { AboutUsPage } from './components/public/AboutUsPage';
+import { ContactUsPage } from './components/public/ContactUsPage';
+import { TermsAndConditionsPage } from './components/public/TermsAndConditionsPage';
+import { RefundPolicyPage } from './components/public/RefundPolicyPage';
+import { PrivacyPolicyPage } from './components/public/PrivacyPolicyPage';
+
 import {
   Party,
   Bill,
@@ -80,6 +87,46 @@ const MainApplication: React.FC = () => {
 
   // Navigation and view state
   const [authView, setAuthView] = useState<'welcome' | 'login' | 'register' | 'forgot'>('welcome');
+
+  // Public routing state for Razorpay verification & direct page access
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname.toLowerCase();
+    }
+    return '/';
+  });
+
+  const navigateTo = useCallback((path: string) => {
+    if (typeof window !== 'undefined') {
+      if (window.location.pathname.toLowerCase() !== path.toLowerCase()) {
+        window.history.pushState({}, '', path);
+      }
+      setCurrentPath(path.toLowerCase());
+      window.scrollTo(0, 0);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname.toLowerCase());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const normalizedPath = currentPath.endsWith('/') && currentPath.length > 1
+    ? currentPath.slice(0, -1)
+    : currentPath;
+
+  useEffect(() => {
+    if (normalizedPath === '/login') {
+      setAuthView('login');
+    } else if (normalizedPath === '/register') {
+      setAuthView('register');
+    } else if (normalizedPath === '/forgot-password' || normalizedPath === '/forgot') {
+      setAuthView('forgot');
+    }
+  }, [normalizedPath]);
 
   useEffect(() => {
     if (shouldShowLogin) {
@@ -277,6 +324,23 @@ const MainApplication: React.FC = () => {
     }
   };
 
+  // Public Pages (accessible without login, on direct URL, and after browser refresh)
+  if (normalizedPath === '/about-us') {
+    return <AboutUsPage onNavigate={navigateTo} />;
+  }
+  if (normalizedPath === '/contact-us') {
+    return <ContactUsPage onNavigate={navigateTo} />;
+  }
+  if (normalizedPath === '/terms-and-conditions') {
+    return <TermsAndConditionsPage onNavigate={navigateTo} />;
+  }
+  if (normalizedPath === '/refund-policy') {
+    return <RefundPolicyPage onNavigate={navigateTo} />;
+  }
+  if (normalizedPath === '/privacy-policy') {
+    return <PrivacyPolicyPage onNavigate={navigateTo} />;
+  }
+
   // If loading authentication state
   if (authLoading) {
     return (
@@ -301,19 +365,35 @@ const MainApplication: React.FC = () => {
           onBack={() => setAuthView('welcome')}
           onOpenRegister={() => setAuthView('register')}
           onOpenForgotPassword={() => setAuthView('forgot')}
+          onNavigate={navigateTo}
         />
       );
     }
 
     if (authView === 'register') {
-      return <CreateAccountScreen onBackToLogin={() => setAuthView('login')} />;
+      return (
+        <CreateAccountScreen
+          onBackToLogin={() => setAuthView('login')}
+          onNavigate={navigateTo}
+        />
+      );
     }
 
     if (authView === 'forgot') {
-      return <ForgotPasswordScreen onBackToLogin={() => setAuthView('login')} />;
+      return (
+        <ForgotPasswordScreen
+          onBackToLogin={() => setAuthView('login')}
+          onNavigate={navigateTo}
+        />
+      );
     }
 
-    return <WelcomeScreen onOpenLogin={() => setAuthView('login')} />;
+    return (
+      <WelcomeScreen
+        onOpenLogin={() => setAuthView('login')}
+        onNavigate={navigateTo}
+      />
+    );
   }
 
   // App Lock Overlay
@@ -423,7 +503,7 @@ const MainApplication: React.FC = () => {
             </div>
           )}
 
-          {currentTab === 'subscription' && <SubscriptionPlans />}
+          {currentTab === 'subscription' && <SubscriptionPlans onNavigate={navigateTo} />}
 
           {currentTab === 'subscription-history' && <SubscriptionHistory />}
 
@@ -433,6 +513,7 @@ const MainApplication: React.FC = () => {
             <AppSettings
               settings={settings}
               onUpdateSettings={setSettings}
+              onNavigate={navigateTo}
             />
           )}
         </main>

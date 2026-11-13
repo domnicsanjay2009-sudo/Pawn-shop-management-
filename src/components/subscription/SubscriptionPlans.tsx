@@ -19,7 +19,11 @@ import { PLANS, createStaffPass, getStaffPasses } from '../../services/subscript
 import { formatDate, formatCurrencyPaise } from '../../utils/formatters';
 import { PlanType, StaffPass } from '../../types';
 
-export const SubscriptionPlans: React.FC = () => {
+interface SubscriptionPlansProps {
+  onNavigate?: (path: string) => void;
+}
+
+export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({ onNavigate }) => {
   const { subscription, isPremium, hasActivePlan, upgradePlan, refreshSubscription } =
     useSubscription();
   const { shopProfile, profileLoading, profileError, refreshProfile } = useAuth();
@@ -289,6 +293,47 @@ export const SubscriptionPlans: React.FC = () => {
         </div>
       </div>
 
+      {/* Razorpay Checkout Terms, Refund Policy & Compliance Disclosures (Section 8 & 9) */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-4 text-xs sm:text-sm">
+        <div className="flex items-center space-x-3 text-brand-950 font-bold text-base">
+          <div className="w-9 h-9 rounded-xl bg-accent-50 text-accent-600 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-brand-950">Secure Razorpay Payment &amp; Subscription Compliance</h4>
+            <p className="text-[11px] font-normal text-slate-500">Business Name: GS Pawn shop management</p>
+          </div>
+        </div>
+
+        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-600 space-y-2">
+          <p className="leading-relaxed">
+            By proceeding with payment, you agree to our{' '}
+            <button
+              type="button"
+              onClick={() => onNavigate ? onNavigate('/terms-and-conditions') : (window.location.href = '/terms-and-conditions')}
+              className="text-accent-600 font-semibold hover:underline cursor-pointer"
+            >
+              Terms and Conditions
+            </button>{' '}
+            and{' '}
+            <button
+              type="button"
+              onClick={() => onNavigate ? onNavigate('/refund-policy') : (window.location.href = '/refund-policy')}
+              className="text-accent-600 font-semibold hover:underline cursor-pointer"
+            >
+              Refund Policy
+            </button>
+            .
+          </p>
+          <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-500">
+            <li><strong>Duration:</strong> Subscriptions provide 365 calendar days of uninterrupted cloud software access from activation.</li>
+            <li><strong>Refund Policy:</strong> Once activated, subscription fees are strictly non-refundable. Cancellation does not terminate an already paid subscription; your access remains active until the end of the paid period.</li>
+            <li><strong>Failed &amp; Duplicate Payments:</strong> Inadvertent duplicate payments are reviewed case-by-case upon request. Failed debits are automatically reversed by your bank/Razorpay within 5–7 banking days.</li>
+            <li><strong>Support:</strong> Official support desk is available at <a href="mailto:domnicsanjay2009@gmail.com" className="text-accent-600 hover:underline">domnicsanjay2009@gmail.com</a> or <a href="tel:+919363200295" className="text-accent-600 hover:underline font-mono">+91 9363200295</a> (Ponneri, Thiruvallur, Tamil Nadu, India).</li>
+          </ul>
+        </div>
+      </div>
+
       {/* Premium Feature Section: 90-Day Temporary Staff Passes */}
       {isPremium && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs">
@@ -364,6 +409,54 @@ export const SubscriptionPlans: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Mandatory Public Policy & Business Footer Links (Section 8) */}
+      <div className="pt-8 border-t border-slate-200 text-center space-y-2">
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/about-us') : (window.location.href = '/about-us')}
+            className="hover:text-brand-950 transition-colors cursor-pointer"
+          >
+            About Us
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/contact-us') : (window.location.href = '/contact-us')}
+            className="hover:text-brand-950 transition-colors cursor-pointer"
+          >
+            Contact Us
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/terms-and-conditions') : (window.location.href = '/terms-and-conditions')}
+            className="hover:text-brand-950 transition-colors cursor-pointer"
+          >
+            Terms &amp; Conditions
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/refund-policy') : (window.location.href = '/refund-policy')}
+            className="hover:text-accent-600 font-semibold transition-colors cursor-pointer text-accent-600"
+          >
+            Refund Policy
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/privacy-policy') : (window.location.href = '/privacy-policy')}
+            className="hover:text-brand-950 transition-colors cursor-pointer"
+          >
+            Privacy Policy
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-400">
+          GS Pawn shop management • Ponneri, Thiruvallur, Tamil Nadu, India • Phone: +91 9363200295
+        </p>
+      </div>
     </div>
   );
 };

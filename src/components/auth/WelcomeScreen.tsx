@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ArrowRight, Sparkles } from 'lucide-react';
+import { ShieldCheck, ArrowRight } from 'lucide-react';
+import { PublicFooter } from '../public/PublicFooter';
 
 interface WelcomeScreenProps {
   onOpenLogin: () => void;
+  onNavigate?: (path: string) => void;
 }
 
 const MOTIVATIONAL_LINES = [
@@ -13,7 +15,7 @@ const MOTIVATIONAL_LINES = [
   "Manage gold, silver, and party ledgers with complete peace of mind."
 ];
 
-export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onOpenLogin }) => {
+export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onOpenLogin, onNavigate }) => {
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
 
   useEffect(() => {
@@ -24,23 +26,47 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onOpenLogin }) => 
   }, []);
 
   return (
-    <div className="min-h-screen bg-brand-950 flex flex-col justify-between p-6 sm:p-12 relative overflow-hidden">
+    <div className="min-h-screen bg-brand-950 flex flex-col justify-between relative overflow-hidden">
       {/* Background ambient lighting */}
       <div className="absolute top-0 right-0 w-96 h-96 bg-accent-600/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-96 h-96 bg-accent-500/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Top Header Branding */}
-      <div className="relative z-10 flex items-center space-x-3">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-accent-600 to-accent-500 flex items-center justify-center shadow-lg shadow-accent-600/20">
-          <ShieldCheck className="w-7 h-7 text-white" />
+      <div className="relative z-10 flex items-center justify-between p-6 sm:px-12 pt-6">
+        <div className="flex items-center space-x-3">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-accent-600 to-accent-500 flex items-center justify-center shadow-lg shadow-accent-600/20">
+            <ShieldCheck className="w-7 h-7 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+              GS Pawn shop <span className="text-accent-400 font-light">management</span>
+            </h1>
+            <p className="text-[10px] sm:text-xs uppercase tracking-wider text-slate-400 font-semibold">
+              Software Subscription Service
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
-            Pawn Shop <span className="text-accent-400 font-light">Management</span>
-          </h1>
-          <p className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-            Enterprise Financial Ledger
-          </p>
+
+        {/* Quick public navigation */}
+        <div className="hidden md:flex items-center space-x-4 text-xs text-slate-400">
+          <button
+            onClick={() => onNavigate ? onNavigate('/about-us') : (window.location.href = '/about-us')}
+            className="hover:text-white transition-colors cursor-pointer"
+          >
+            About Us
+          </button>
+          <button
+            onClick={() => onNavigate ? onNavigate('/contact-us') : (window.location.href = '/contact-us')}
+            className="hover:text-white transition-colors cursor-pointer"
+          >
+            Contact Us
+          </button>
+          <button
+            onClick={() => onNavigate ? onNavigate('/refund-policy') : (window.location.href = '/refund-policy')}
+            className="text-accent-400 hover:text-accent-300 font-medium transition-colors cursor-pointer"
+          >
+            Refund Policy
+          </button>
         </div>
       </div>
 
@@ -73,9 +99,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onOpenLogin }) => 
         </div>
       </div>
 
-      {/* Bottom Footer Info */}
-      <div className="relative z-10 text-center text-xs text-slate-500 font-medium">
-        &copy; {new Date().getFullYear()} Pawn Shop Management System. All rights reserved.
+      {/* Full Public Footer with all 5 mandatory policy links and confirmed business details */}
+      <div className="relative z-10">
+        <PublicFooter onNavigate={onNavigate} compact={false} />
       </div>
     </div>
   );

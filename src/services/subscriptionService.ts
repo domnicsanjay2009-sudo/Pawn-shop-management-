@@ -251,8 +251,8 @@ export async function initiateRazorpayPayment(
       key: razorpayKey,
       amount: amount,
       currency: currency || 'INR',
-      name: 'Pawn Shop Management',
-      description: `${planType} Subscription (1 Year)`,
+      name: 'GS Pawn shop management',
+      description: `${planType} Subscription - GS Pawn shop management software service`,
       order_id: orderId,
       image: 'https://cdn-icons-png.flaticon.com/512/2830/2830284.png',
       handler: async function (response: any) {

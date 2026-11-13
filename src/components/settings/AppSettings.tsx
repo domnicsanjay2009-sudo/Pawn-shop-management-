@@ -36,11 +36,13 @@ import { isValidPIN, isValidPassword, isValidIndianPhone, isValidEmail } from '.
 interface AppSettingsProps {
   settings: IAppSettings;
   onUpdateSettings: (newSettings: IAppSettings) => void;
+  onNavigate?: (path: string) => void;
 }
 
 export const AppSettings: React.FC<AppSettingsProps> = ({
   settings,
   onUpdateSettings,
+  onNavigate,
 }) => {
   const {
     shopProfile,
@@ -1045,28 +1047,86 @@ export const AppSettings: React.FC<AppSettingsProps> = ({
         </div>
       </div>
 
-      {/* Dedicated Privacy Policy & Compliance Section (Module 2) */}
-      <div className="bg-gradient-to-r from-brand-950 via-brand-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 rounded-2xl bg-accent-600/30 text-accent-400 flex items-center justify-center font-bold border border-accent-500/30 shrink-0">
-            <Shield className="w-6 h-6" />
+      {/* Dedicated Legal Documentation & Razorpay Merchant Compliance Section */}
+      <div className="bg-gradient-to-r from-brand-950 via-brand-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center space-x-4">
+            <div className="w-12 h-12 rounded-2xl bg-accent-600/30 text-accent-400 flex items-center justify-center font-bold border border-accent-500/30 shrink-0">
+              <Shield className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Legal Documentation &amp; Merchant Compliance</h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Official business legal policies, terms of service, refund rules, and contact information for GS Pawn shop management
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-base font-bold text-white">Privacy Policy & Compliance</h3>
-            <p className="text-xs text-slate-300 mt-0.5">
-              Review our data protection architecture, domestic cloud residency, and financial record compliance
-            </p>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowPrivacyPolicy(true)}
+            className="px-5 py-2.5 bg-accent-600 hover:bg-accent-500 text-white font-bold rounded-xl text-xs shadow-md transition-colors shrink-0 cursor-pointer flex items-center space-x-1.5"
+          >
+            <FileCheck className="w-4 h-4" />
+            <span>Open Quick Policy Dialog</span>
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowPrivacyPolicy(true)}
-          className="px-5 py-2.5 bg-accent-600 hover:bg-accent-500 text-white font-bold rounded-xl text-xs shadow-md transition-colors shrink-0 cursor-pointer flex items-center space-x-1.5"
-        >
-          <FileCheck className="w-4 h-4" />
-          <span>View Privacy Policy</span>
-        </button>
+        {/* 5 Mandatory Public Policy Links */}
+        <div className="pt-4 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/about-us') : (window.location.href = '/about-us')}
+            className="p-3 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-left transition-colors cursor-pointer group"
+          >
+            <div className="font-bold text-white group-hover:text-accent-400">About Us</div>
+            <p className="text-[10px] text-slate-400 mt-0.5">Our software &amp; mission</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/contact-us') : (window.location.href = '/contact-us')}
+            className="p-3 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-left transition-colors cursor-pointer group"
+          >
+            <div className="font-bold text-white group-hover:text-accent-400">Contact Us</div>
+            <p className="text-[10px] text-slate-400 mt-0.5">Helpline &amp; support desk</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/terms-and-conditions') : (window.location.href = '/terms-and-conditions')}
+            className="p-3 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-left transition-colors cursor-pointer group"
+          >
+            <div className="font-bold text-white group-hover:text-accent-400">Terms &amp; Conditions</div>
+            <p className="text-[10px] text-slate-400 mt-0.5">Subscription agreement</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/refund-policy') : (window.location.href = '/refund-policy')}
+            className="p-3 bg-accent-600/20 hover:bg-accent-600/30 rounded-xl border border-accent-500/30 text-left transition-colors cursor-pointer group"
+          >
+            <div className="font-bold text-accent-300 group-hover:text-white">Refund Policy</div>
+            <p className="text-[10px] text-accent-400 mt-0.5">Approved refund decisions</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('/privacy-policy') : (window.location.href = '/privacy-policy')}
+            className="p-3 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 text-left transition-colors cursor-pointer group"
+          >
+            <div className="font-bold text-white group-hover:text-accent-400">Privacy Policy</div>
+            <p className="text-[10px] text-slate-400 mt-0.5">Domestic data protection</p>
+          </button>
+        </div>
+
+        {/* Business Details Reference */}
+        <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+          <span>Business Name: <strong>GS Pawn shop management</strong></span>
+          <span>Ponneri, Thiruvallur, Tamil Nadu, India</span>
+          <span>Official Email: <strong>domnicsanjay2009@gmail.com</strong></span>
+          <span>Phone: <strong>+91 9363200295</strong></span>
+        </div>
       </div>
 
       <PrivacyPolicyModal

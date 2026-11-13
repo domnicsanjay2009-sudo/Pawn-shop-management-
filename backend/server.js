@@ -322,6 +322,50 @@ app.post('/api/webhook', express.raw({ type: '*/*' }), async (req, res) => {
 // JSON Body Parser for remaining routes
 app.use(express.json());
 
+// PUBLIC CONTACT & SUPPORT INQUIRY ENDPOINT
+app.post('/api/contact', async (req, res) => {
+  try {
+    const { name, email, phone, subject, message } = req.body || {};
+    if (!name || !email || !message) {
+      return res.status(400).json({ error: 'Name, email, and message are required fields.' });
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+
+    const inquiryRecord = {
+      name: String(name).trim().slice(0, 100),
+      email: String(email).trim().toLowerCase().slice(0, 100),
+      phone: phone ? String(phone).trim().slice(0, 20) : '',
+      subject: subject ? String(subject).trim().slice(0, 150) : 'General Inquiry',
+      message: String(message).trim().slice(0, 2000),
+      createdAt: Date.now(),
+      status: 'new',
+      businessName: 'GS Pawn shop management',
+      source: 'public_website_contact_form'
+    };
+
+    try {
+      if (db) {
+        await db.collection('support_inquiries').add(inquiryRecord);
+      }
+    } catch (dbErr) {
+      console.warn('Could not store inquiry in Firestore:', dbErr.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Thank you for contacting GS Pawn shop management. Your message has been received. Our support team will respond to your registered email shortly.'
+    });
+  } catch (err) {
+    console.error('Contact endpoint error:', err);
+    return res.status(500).json({
+      error: 'Failed to process inquiry. Please email us directly at domnicsanjay2009@gmail.com.'
+    });
+  }
+});
+
 // 1. CREATE ORDER ENDPOINT
 app.post('/api/create-order', authenticateUser, async (req, res) => {
   const { planName, shopId } = req.body || {};

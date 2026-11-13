@@ -5,9 +5,10 @@ import { isValidEmail } from '../../utils/validators';
 
 interface ForgotPasswordScreenProps {
   onBackToLogin: () => void;
+  onNavigate?: (path: string) => void;
 }
 
-export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onBackToLogin }) => {
+export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onBackToLogin, onNavigate }) => {
   const { resetPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -110,6 +111,49 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ onBa
             </button>
           </form>
         )}
+      </div>
+
+      {/* Mandatory Public Policy & Business Footer Links (Section 8) */}
+      <div className="w-full max-w-md mt-6 text-center z-10 space-y-2">
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-xs text-slate-400">
+          <button
+            onClick={() => onNavigate ? onNavigate('/about-us') : (window.location.href = '/about-us')}
+            className="hover:text-white transition-colors cursor-pointer"
+          >
+            About Us
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => onNavigate ? onNavigate('/contact-us') : (window.location.href = '/contact-us')}
+            className="hover:text-white transition-colors cursor-pointer"
+          >
+            Contact Us
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => onNavigate ? onNavigate('/terms-and-conditions') : (window.location.href = '/terms-and-conditions')}
+            className="hover:text-white transition-colors cursor-pointer"
+          >
+            Terms &amp; Conditions
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => onNavigate ? onNavigate('/refund-policy') : (window.location.href = '/refund-policy')}
+            className="hover:text-accent-400 font-medium transition-colors cursor-pointer text-accent-400/90"
+          >
+            Refund Policy
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => onNavigate ? onNavigate('/privacy-policy') : (window.location.href = '/privacy-policy')}
+            className="hover:text-white transition-colors cursor-pointer"
+          >
+            Privacy Policy
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-500">
+          GS Pawn shop management • Ponneri, Thiruvallur, Tamil Nadu, India • +91 9363200295
+        </p>
       </div>
     </div>
   );
