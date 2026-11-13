@@ -50,8 +50,8 @@ const PLANS = {
 };
 
 function getRazorpayInstance() {
-  const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_TzhIwlAo62Vn7n';
-  const keySecret = process.env.RAZORPAY_KEY_SECRET || 'g5RPEmA6TcfwoQozy5m8gNMU';
+  const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_live_Tu8s092MqjR3il';
+  const keySecret = process.env.RAZORPAY_KEY_SECRET || 'mZl6mJyLzV40E7GG1GP0r2AN';
   
   if (!keyId || !keySecret) {
     throw new Error('Razorpay credentials (RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET) missing on server.');

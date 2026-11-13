@@ -156,7 +156,7 @@ describe('Razorpay Integration & Security Verification Suite', () => {
       const apiHandler = (await import('../../api/index.js')).default;
       const orderId = 'order_UnitTestOrder123';
       const paymentId = 'pay_UnitTestPayment456';
-      const secret = 'g5RPEmA6TcfwoQozy5m8gNMU';
+      const secret = process.env.RAZORPAY_KEY_SECRET || 'mZl6mJyLzV40E7GG1GP0r2AN';
       const signature = crypto.createHmac('sha256', secret).update(`${orderId}|${paymentId}`).digest('hex');
 
       const req: any = {
