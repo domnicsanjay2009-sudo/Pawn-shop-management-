@@ -46,6 +46,7 @@ export interface UserSummary {
   isSuspended: boolean;
   isBlocked: boolean;
   isApproved: boolean;
+  isPaused?: boolean;
   suspensionReason?: string;
   disabledReason?: string;
   blockedReason?: string;
@@ -164,7 +165,7 @@ export interface SubscriptionItem {
   ownerEmail?: string;
   ownerName?: string;
   plan: 'Free' | 'Yearly' | 'Yearly Premium' | 'Complimentary Premium';
-  status: 'Approved' | 'Pending' | 'Expired' | 'Revoked';
+  status: 'Approved' | 'Pending' | 'Expired' | 'Revoked' | 'Paused' | 'Cancelled';
   paymentStatus: PaymentStatusType;
   entitlementSource: EntitlementSource;
   approvalType?: 'razorpay_webhook' | 'manual_admin';
@@ -174,6 +175,12 @@ export interface SubscriptionItem {
   expiryDate: number;
   updatedAt?: number;
   note?: string;
+  amountPaise?: number;
+  razorpayPaymentId?: string;
+  pausedAt?: number;
+  pauseReason?: string;
+  cancelledAt?: number;
+  cancelReason?: string;
 }
 
 export interface PaymentTxItem {
@@ -387,6 +394,12 @@ export function subscribeToUsersAndShops(callback: (users: UserSummary[]) => voi
         entitlementSource = 'RAZORPAY';
       }
 
+      const isPaused = Boolean(
+        sub.status === 'Paused' ||
+        (shop.isSuspended && shop.disabledReason?.toLowerCase().includes('pause')) ||
+        (shop.suspensionReason?.toLowerCase().includes('pause'))
+      );
+
       result.push({
         uid,
         email: shop.email || user.email || '',
@@ -399,6 +412,7 @@ export function subscribeToUsersAndShops(callback: (users: UserSummary[]) => voi
         isSuspended: Boolean(shop.isSuspended || shop.status === 'Disabled' || shop.status === 'Suspended'),
         isBlocked: Boolean(shop.isBlocked || shop.status === 'Blocked'),
         isApproved: Boolean(shop.isApproved || shop.status === 'Approved'),
+        isPaused,
         suspensionReason: shop.suspensionReason,
         disabledReason: shop.disabledReason || shop.suspensionReason,
         blockedReason: shop.blockedReason,
@@ -406,7 +420,7 @@ export function subscribeToUsersAndShops(callback: (users: UserSummary[]) => voi
         subscriptionStatus: sub.status || 'Pending',
         paymentStatus,
         entitlementSource,
-        lastLoginAt: lastLoginMap[uid] || null,
+        lastLoginAt: lastLoginMap[uid] || undefined,
         activeDevicesCount: devActiveCounts[uid] || 0,
         totalRegisteredDevicesCount: devTotalCounts[uid] || 0,
         createdAt: shop.createdAt || user.createdAt,
@@ -586,6 +600,10 @@ export function subscribeToSubscriptionsAndPayments(callback: (data: { subscript
         entitlementSource = 'RAZORPAY';
       }
 
+      const matchingTx = transactions.find((t) => t.shopId === data.shopId);
+      const amountPaise = data.amountPaise || (matchingTx ? matchingTx.amount : undefined);
+      const razorpayPaymentId = data.razorpayPaymentId || (matchingTx ? matchingTx.paymentId : undefined);
+
       return {
         id: d.id,
         shopId: data.shopId,
@@ -603,6 +621,12 @@ export function subscribeToSubscriptionsAndPayments(callback: (data: { subscript
         expiryDate: data.expiryDate || Date.now(),
         updatedAt: data.updatedAt,
         note: data.note,
+        amountPaise,
+        razorpayPaymentId,
+        pausedAt: data.pausedAt,
+        pauseReason: data.pauseReason,
+        cancelledAt: data.cancelledAt,
+        cancelReason: data.cancelReason,
       } as SubscriptionItem;
     });
     callback({ subscriptions, transactions });
@@ -1304,6 +1328,208 @@ export async function extendSubscriptionValidity(
   } catch (err: any) {
     return { success: false, error: err.message };
   }
+}
+
+/**
+ * PAUSE SUBSCRIPTION – Temporarily suspend user access to the Main App
+ * Shows "Your subscription is paused by Admin" screen until unpaused.
+ */
+export async function pauseSubscription(
+  shopId: string,
+  userUid: string,
+  userEmail: string,
+  reason = 'Your subscription is paused by Admin. Please contact customer support.'
+): Promise<{ success: boolean; error?: string }> {
+  const now = Date.now();
+  const currentAdmin = auth.currentUser;
+
+  try {
+    const subRef = doc(db, 'subscriptions', shopId);
+    await setDoc(subRef, {
+      status: 'Paused',
+      pausedAt: now,
+      pauseReason: reason,
+      updatedAt: now,
+    }, { merge: true });
+
+    await updateDoc(doc(db, 'shops', shopId), {
+      status: 'Suspended',
+      isSuspended: true,
+      disabledReason: reason,
+      suspensionReason: reason,
+      suspendedAt: now,
+      suspendedBy: currentAdmin?.email || 'Admin',
+      updatedAt: now,
+    }).catch(() => {});
+
+    if (userUid) {
+      await updateDoc(doc(db, 'users', userUid), {
+        status: 'Suspended',
+        isSuspended: true,
+        disabledReason: reason,
+        updatedAt: now,
+      }).catch(() => {});
+    }
+
+    await recordAdminAuditLog({
+      action: 'PAUSE_SUBSCRIPTION',
+      target_user_uid: userUid,
+      target_user_email: userEmail,
+      target_resource: 'subscriptions',
+      target_id: shopId,
+      new_status: 'Paused',
+      reason,
+      operation_result: 'SUCCESS',
+    });
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Pause subscription failed:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * UNPAUSE SUBSCRIPTION – Restore user access to the Main App
+ */
+export async function unpauseSubscription(
+  shopId: string,
+  userUid: string,
+  userEmail: string,
+  reason = 'Subscription unpaused by Administrator'
+): Promise<{ success: boolean; error?: string }> {
+  const now = Date.now();
+
+  try {
+    const subRef = doc(db, 'subscriptions', shopId);
+    await updateDoc(subRef, {
+      status: 'Approved',
+      unpausedAt: now,
+      updatedAt: now,
+    });
+
+    await updateDoc(doc(db, 'shops', shopId), {
+      status: 'Approved',
+      isSuspended: false,
+      disabledReason: null,
+      suspensionReason: null,
+      updatedAt: now,
+    }).catch(() => {});
+
+    if (userUid) {
+      await updateDoc(doc(db, 'users', userUid), {
+        status: 'Approved',
+        isSuspended: false,
+        disabledReason: null,
+        updatedAt: now,
+      }).catch(() => {});
+    }
+
+    await recordAdminAuditLog({
+      action: 'UNPAUSE_SUBSCRIPTION',
+      target_user_uid: userUid,
+      target_user_email: userEmail,
+      target_resource: 'subscriptions',
+      target_id: shopId,
+      new_status: 'Approved',
+      reason,
+      operation_result: 'SUCCESS',
+    });
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Unpause subscription failed:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * DECLINE / CANCEL SUBSCRIPTION (REVOKE) – Terminate active subscription
+ * Immediately cancels subscription, sets plan to Free, requiring resubscription.
+ */
+export async function cancelSubscription(
+  shopId: string,
+  userUid: string,
+  userEmail: string,
+  reason = 'Subscription terminated by Administrator'
+): Promise<{ success: boolean; error?: string }> {
+  const now = Date.now();
+
+  try {
+    const subRef = doc(db, 'subscriptions', shopId);
+    const existingSnap = await getDoc(subRef);
+    const prevPlan = existingSnap.exists() ? existingSnap.data().plan : 'Free';
+
+    await updateDoc(subRef, {
+      plan: 'Free',
+      status: 'Cancelled',
+      maxDevices: 3,
+      expiryDate: now,
+      cancelledAt: now,
+      cancelReason: reason,
+      updatedAt: now,
+    });
+
+    await updateDoc(doc(db, 'shops', shopId), {
+      isSuspended: false,
+      disabledReason: null,
+      updatedAt: now,
+    }).catch(() => {});
+
+    if (userUid) {
+      await updateDoc(doc(db, 'users', userUid), {
+        isSuspended: false,
+        disabledReason: null,
+        updatedAt: now,
+      }).catch(() => {});
+    }
+
+    await recordAdminAuditLog({
+      action: 'CANCEL_SUBSCRIPTION',
+      target_user_uid: userUid,
+      target_user_email: userEmail,
+      target_resource: 'subscriptions',
+      target_id: shopId,
+      previous_subscription: prevPlan,
+      new_subscription: 'Cancelled (Free)',
+      reason,
+      operation_result: 'SUCCESS',
+    });
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Cancel subscription failed:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Returns allowed device limit based on subscription plan (3 or 9 devices)
+ */
+export function getUserDeviceLimit(plan?: string): number {
+  if (plan === 'Yearly Premium' || plan === 'Complimentary Premium') {
+    return 9;
+  }
+  return 3;
+}
+
+/**
+ * Subscribe to devices for a specific user UID in real time
+ */
+export function subscribeToUserDevices(userUid: string, callback: (devices: AdminDevice[]) => void) {
+  const q = query(
+    collection(db, 'user_devices'),
+    where('user_uid', '==', userUid),
+    orderBy('last_seen_at', 'desc'),
+    limit(50)
+  );
+  return onSnapshot(q, (snap) => {
+    const list: AdminDevice[] = snap.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    } as AdminDevice));
+    callback(list);
+  }, (err) => console.warn('User devices listener:', err));
 }
 
 /**

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   Search,
@@ -22,16 +22,30 @@ import {
   Mail,
   Phone,
   Calendar,
-  Lock
+  Lock,
+  Pause,
+  Play,
+  Monitor,
+  Tablet,
+  Trash2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import {
   UserSummary,
+  AdminDevice,
   approveAndGrantPremium,
   disableUserAccount,
   reactivateDisabledAccount,
   blockUserAccount,
   unblockUserAccount,
-  revokeAllUserDevices
+  revokeAllUserDevices,
+  pauseSubscription,
+  unpauseSubscription,
+  cancelSubscription,
+  revokeDevice,
+  getUserDeviceLimit,
+  subscribeToUserDevices
 } from '../services/adminDataService';
 import { ConfirmationModal, ActionCategory } from './ConfirmationModal';
 
@@ -52,6 +66,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users })
     actionType: ActionCategory;
     title: string;
     targetUser: UserSummary | null;
+    targetDeviceId?: string;
     consequences: string;
     confirmLabel: string;
     confirmVariant: 'danger' | 'warning' | 'primary' | 'success';
@@ -67,6 +82,22 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users })
     confirmVariant: 'primary',
     requiresReason: false,
   });
+
+  // User Devices Tracking state
+  const [expandedUserUid, setExpandedUserUid] = useState<string | null>(null);
+  const [userDevices, setUserDevices] = useState<Record<string, AdminDevice[]>>({});
+
+  useEffect(() => {
+    if (!expandedUserUid) return;
+    const unsub = subscribeToUserDevices(expandedUserUid, (devs) => {
+      setUserDevices((prev) => ({ ...prev, [expandedUserUid]: devs }));
+    });
+    return () => unsub();
+  }, [expandedUserUid]);
+
+  const toggleExpandDevices = (uid: string) => {
+    setExpandedUserUid(expandedUserUid === uid ? null : uid);
+  };
 
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -176,13 +207,118 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users })
     });
   };
 
+  const triggerPauseSubscription = (user: UserSummary) => {
+    setOpenMenuUid(null);
+    setModalConfig({
+      isOpen: true,
+      actionType: 'pause_subscription',
+      title: 'Pause Customer Subscription Access',
+      targetUser: user,
+      consequences:
+        'This will temporarily pause the customer subscription. The Main App will immediately show the "Your subscription is paused by Admin" screen until you unpause.',
+      confirmLabel: 'Pause Subscription',
+      confirmVariant: 'warning',
+      requiresReason: true,
+      reasonPlaceholder: 'Reason for pause (e.g. Account review, owner request, terms check)',
+    });
+  };
+
+  const triggerUnpauseSubscription = (user: UserSummary) => {
+    setOpenMenuUid(null);
+    setModalConfig({
+      isOpen: true,
+      actionType: 'unpause_subscription',
+      title: 'Unpause Customer Subscription Access',
+      targetUser: user,
+      consequences:
+        'This will restore immediate access to the Main App and pledge bill workspace in real time.',
+      confirmLabel: 'Unpause Subscription',
+      confirmVariant: 'success',
+      requiresReason: false,
+    });
+  };
+
+  const triggerCancelSubscription = (user: UserSummary) => {
+    setOpenMenuUid(null);
+    setModalConfig({
+      isOpen: true,
+      actionType: 'cancel_subscription',
+      title: 'Decline / Cancel Subscription (Revoke)',
+      targetUser: user,
+      consequences:
+        'This will immediately terminate the user active subscription and revoke their premium access, requiring them to subscribe again.',
+      confirmLabel: 'Cancel Subscription',
+      confirmVariant: 'danger',
+      requiresReason: true,
+      reasonPlaceholder: 'Reason for cancellation (e.g. Requested cancellation, non-payment)',
+    });
+  };
+
+  const triggerRemoveDevice = (user: UserSummary, device: AdminDevice) => {
+    setModalConfig({
+      isOpen: true,
+      actionType: 'revoke_device',
+      title: `Remote Logout Device: ${device.device_name || device.device_id}`,
+      targetUser: user,
+      targetDeviceId: device.device_id,
+      consequences: `This will remotely log out this specific device (${device.device_name} • ${device.operating_system} • ${device.browser}) and revoke its session in real time.`,
+      confirmLabel: 'Remote Logout',
+      confirmVariant: 'danger',
+      requiresReason: true,
+      reasonPlaceholder: 'Reason for remote logout (e.g. Device limit exceeded, unverified hardware)',
+    });
+  };
+
   // Execution Handler
   const handleModalConfirm = async (reason: string) => {
     const user = modalConfig.targetUser;
     if (!user) return;
 
     try {
-      if (modalConfig.actionType === 'approve_premium') {
+      if (modalConfig.actionType === 'pause_subscription') {
+        const res = await pauseSubscription(
+          user.shopId,
+          user.uid,
+          user.email,
+          reason || 'Your subscription is paused by Admin. Please contact customer support.'
+        );
+        if (res.success) {
+          showNotification('success', `Subscription paused for ${user.email}.`);
+        } else {
+          showNotification('error', res.error || 'Failed to pause subscription.');
+        }
+      } else if (modalConfig.actionType === 'unpause_subscription') {
+        const res = await unpauseSubscription(user.shopId, user.uid, user.email, reason);
+        if (res.success) {
+          showNotification('success', `Subscription unpaused and access restored for ${user.email}.`);
+        } else {
+          showNotification('error', res.error || 'Failed to unpause subscription.');
+        }
+      } else if (modalConfig.actionType === 'cancel_subscription') {
+        const res = await cancelSubscription(
+          user.shopId,
+          user.uid,
+          user.email,
+          reason || 'Subscription cancelled by Administrator'
+        );
+        if (res.success) {
+          showNotification('success', `Subscription cancelled for ${user.email}.`);
+        } else {
+          showNotification('error', res.error || 'Failed to cancel subscription.');
+        }
+      } else if (modalConfig.actionType === 'revoke_device' && modalConfig.targetDeviceId) {
+        const ok = await revokeDevice(
+          modalConfig.targetDeviceId,
+          user.uid,
+          user.email,
+          reason || 'Device remotely logged out by administrator'
+        );
+        if (ok) {
+          showNotification('success', `Device ${modalConfig.targetDeviceId} successfully logged out.`);
+        } else {
+          showNotification('error', 'Failed to remotely log out device.');
+        }
+      } else if (modalConfig.actionType === 'approve_premium') {
         const res = await approveAndGrantPremium(user.shopId, user.uid, user.email, {
           reason: reason || 'Complimentary administrator-granted full Premium access',
           previousStatus: user.status,
@@ -390,167 +526,349 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users })
                 <th className="py-3.5 px-4">Subscription Plan</th>
                 <th className="py-3.5 px-4">Payment Status</th>
                 <th className="py-3.5 px-4">Last Login</th>
-                <th className="py-3.5 px-4">Registered Devices</th>
+                <th className="py-3.5 px-4">Active Devices</th>
+                <th className="py-3.5 px-4 text-right">Admin Controls</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-slate-500">
+                  <td colSpan={12} className="py-12 text-center text-slate-500">
                     No user accounts match the current filter or search criteria.
                   </td>
                 </tr>
               ) : (
                 filteredUsers.map((u) => (
-                  <tr key={u.uid} className="hover:bg-slate-800/30 transition-colors">
-                    {/* 1. Owner Name */}
-                    <td className="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
-                      {u.ownerName}
-                    </td>
+                  <React.Fragment key={u.uid}>
+                    <tr className="hover:bg-slate-800/30 transition-colors">
+                      {/* 1. Owner Name */}
+                      <td className="py-3.5 px-4 font-semibold text-white whitespace-nowrap">
+                        {u.ownerName}
+                      </td>
 
-                    {/* 2. Shop Name */}
-                    <td className="py-3.5 px-4 font-medium text-blue-400 whitespace-nowrap">
-                      {u.shopName}
-                    </td>
+                      {/* 2. Shop Name */}
+                      <td className="py-3.5 px-4 font-medium text-blue-400 whitespace-nowrap">
+                        {u.shopName}
+                      </td>
 
-                    {/* 3. Email Address WITH THREE-DOT MENU BESIDE EMAIL */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2 relative">
-                        <span className="font-mono text-slate-200">{u.email}</span>
+                      {/* 3. Email Address WITH THREE-DOT MENU BESIDE EMAIL */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2 relative">
+                          <span className="font-mono text-slate-200">{u.email}</span>
 
-                        {/* Three-Dot Menu Button */}
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() => setOpenMenuUid(openMenuUid === u.uid ? null : u.uid)}
-                            title="Account actions"
-                            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
+                          {/* Three-Dot Menu Button */}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setOpenMenuUid(openMenuUid === u.uid ? null : u.uid)}
+                              title="Account actions"
+                              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
 
-                          {/* Action Dropdown Menu */}
-                          {openMenuUid === u.uid && (
-                            <>
-                              <div
-                                className="fixed inset-0 z-40"
-                                onClick={() => setOpenMenuUid(null)}
-                              />
-                              <div className="absolute left-0 mt-1 w-52 bg-[#0B1528] border border-slate-700/80 rounded-xl shadow-2xl z-50 py-1 text-xs divide-y divide-slate-800/80 animate-scale-up">
-                                {/* Action 1: APPROVE */}
-                                <button
-                                  type="button"
-                                  onClick={() => triggerApprovePremium(u)}
-                                  className="w-full text-left px-3 py-2 text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2 cursor-pointer font-medium"
-                                >
-                                  <Sparkles className="w-4 h-4 text-emerald-400" />
-                                  <span>APPROVE (Grant Premium)</span>
-                                </button>
-
-                                {/* Action 2: DISABLE */}
-                                {u.status !== 'Disabled' && u.status !== 'Suspended' ? (
+                            {/* Action Dropdown Menu */}
+                            {openMenuUid === u.uid && (
+                              <>
+                                <div
+                                  className="fixed inset-0 z-40"
+                                  onClick={() => setOpenMenuUid(null)}
+                                />
+                                <div className="absolute left-0 mt-1 w-52 bg-[#0B1528] border border-slate-700/80 rounded-xl shadow-2xl z-50 py-1 text-xs divide-y divide-slate-800/80 animate-scale-up">
+                                  {/* Action 1: APPROVE */}
                                   <button
                                     type="button"
-                                    onClick={() => triggerDisable(u)}
-                                    className="w-full text-left px-3 py-2 text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                    onClick={() => triggerApprovePremium(u)}
+                                    className="w-full text-left px-3 py-2 text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2 cursor-pointer font-medium"
                                   >
-                                    <PowerOff className="w-4 h-4 text-amber-400" />
-                                    <span>DISABLE (Restrict Access)</span>
+                                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                                    <span>APPROVE (Grant Premium)</span>
                                   </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => triggerReactivate(u)}
-                                    className="w-full text-left px-3 py-2 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer font-medium"
-                                  >
-                                    <RefreshCw className="w-4 h-4 text-blue-400" />
-                                    <span>REACTIVATE Account</span>
-                                  </button>
-                                )}
 
-                                {/* Action 3: BLOCK */}
-                                {u.status !== 'Blocked' ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => triggerBlock(u)}
-                                    className="w-full text-left px-3 py-2 text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 cursor-pointer font-medium"
-                                  >
-                                    <Ban className="w-4 h-4 text-rose-400" />
-                                    <span>BLOCK (Permanent)</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => triggerUnblock(u)}
-                                    className="w-full text-left px-3 py-2 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer font-medium"
-                                  >
-                                    <CheckCircle2 className="w-4 h-4 text-blue-400" />
-                                    <span>UNBLOCK Account</span>
-                                  </button>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </td>
+                                  {/* Action 2: DISABLE */}
+                                  {u.status !== 'Disabled' && u.status !== 'Suspended' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => triggerDisable(u)}
+                                      className="w-full text-left px-3 py-2 text-amber-400 hover:bg-amber-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                    >
+                                      <PowerOff className="w-4 h-4 text-amber-400" />
+                                      <span>DISABLE (Restrict Access)</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => triggerReactivate(u)}
+                                      className="w-full text-left px-3 py-2 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                    >
+                                      <RefreshCw className="w-4 h-4 text-blue-400" />
+                                      <span>REACTIVATE Account</span>
+                                    </button>
+                                  )}
 
-                    {/* 4. Phone Number */}
-                    <td className="py-3.5 px-4 font-mono text-slate-300 whitespace-nowrap">
-                      {u.phone || 'N/A'}
-                    </td>
-
-                    {/* 5. User UID */}
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500 max-w-[130px] truncate" title={u.uid}>
-                      {u.uid}
-                    </td>
-
-                    {/* 6. Registration Date */}
-                    <td className="py-3.5 px-4 text-slate-300 whitespace-nowrap">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
-                    </td>
-
-                    {/* 7. Account Status */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      {getStatusBadge(u.status)}
-                    </td>
-
-                    {/* 8. Subscription Plan */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="font-semibold text-slate-200">{u.plan}</div>
-                      {u.entitlementSource === 'ADMIN_GRANTED' && (
-                        <div className="text-[10px] text-purple-400">Admin Granted</div>
-                      )}
-                    </td>
-
-                    {/* 9. Payment Status */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      {getPaymentBadge(u.paymentStatus)}
-                    </td>
-
-                    {/* 10. Last Login */}
-                    <td className="py-3.5 px-4 text-slate-300 whitespace-nowrap font-mono text-[11px]">
-                      {u.lastLoginAt ? (
-                        <div>
-                          <div>{new Date(u.lastLoginAt).toLocaleDateString()}</div>
-                          <div className="text-[10px] text-slate-500">
-                            {new Date(u.lastLoginAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {/* Action 3: BLOCK */}
+                                  {u.status !== 'Blocked' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => triggerBlock(u)}
+                                      className="w-full text-left px-3 py-2 text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                    >
+                                      <Ban className="w-4 h-4 text-rose-400" />
+                                      <span>BLOCK (Permanent)</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => triggerUnblock(u)}
+                                      className="w-full text-left px-3 py-2 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4 text-blue-400" />
+                                      <span>UNBLOCK Account</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
-                      ) : (
-                        <span className="text-slate-500">Never</span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* 11. Number of Registered Devices */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="font-bold text-white text-xs">{u.totalRegisteredDevicesCount}</span>
-                        <span className="text-slate-500 text-[10px]">({u.activeDevicesCount} active)</span>
-                      </div>
-                    </td>
-                  </tr>
+                      {/* 4. Phone Number */}
+                      <td className="py-3.5 px-4 font-mono text-slate-300 whitespace-nowrap">
+                        {u.phone || 'N/A'}
+                      </td>
+
+                      {/* 5. User UID */}
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500 max-w-[130px] truncate" title={u.uid}>
+                        {u.uid}
+                      </td>
+
+                      {/* 6. Registration Date */}
+                      <td className="py-3.5 px-4 text-slate-300 whitespace-nowrap">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
+                      </td>
+
+                      {/* 7. Account Status */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        {getStatusBadge(u.status)}
+                      </td>
+
+                      {/* 8. Subscription Plan */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="font-semibold text-slate-200">{u.plan}</div>
+                        {u.entitlementSource === 'ADMIN_GRANTED' && (
+                          <div className="text-[10px] text-purple-400">Admin Granted</div>
+                        )}
+                      </td>
+
+                      {/* 9. Payment Status */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        {getPaymentBadge(u.paymentStatus)}
+                      </td>
+
+                      {/* 10. Last Login */}
+                      <td className="py-3.5 px-4 text-slate-300 whitespace-nowrap font-mono text-[11px]">
+                        {u.lastLoginAt ? (
+                          <div>
+                            <div>{new Date(u.lastLoginAt).toLocaleDateString()}</div>
+                            <div className="text-[10px] text-slate-500">
+                              {new Date(u.lastLoginAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">Never</span>
+                        )}
+                      </td>
+
+                      {/* 11. Number of Registered Devices & Limits */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        {(() => {
+                          const limit = getUserDeviceLimit(u.plan);
+                          const isOverLimit = u.activeDevicesCount > limit;
+                          const isExpanded = expandedUserUid === u.uid;
+                          return (
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <Smartphone className="w-3.5 h-3.5 text-slate-400" />
+                                <span className={`font-bold text-xs ${isOverLimit ? 'text-rose-400' : 'text-white'}`}>
+                                  {u.activeDevicesCount} / {limit}
+                                </span>
+                                <span className="text-slate-500 text-[10px]">active</span>
+                              </div>
+                              {isOverLimit && (
+                                <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[9px] font-bold animate-pulse">
+                                  OVER LIMIT
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => toggleExpandDevices(u.uid)}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer border ${
+                                  isExpanded
+                                    ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
+                                    : 'bg-slate-800 text-slate-300 hover:text-white border-slate-700'
+                                }`}
+                                title="View & manage devices"
+                              >
+                                <span>Devices</span>
+                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </td>
+
+                      {/* 12. Direct Real-Time Admin Action Buttons */}
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* PAUSE / UNPAUSE BUTTON */}
+                          {u.isPaused ? (
+                            <button
+                              type="button"
+                              onClick={() => triggerUnpauseSubscription(u)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                              title="Unpause subscription access"
+                            >
+                              <Play className="w-3 h-3 fill-emerald-400" />
+                              <span>Unpause</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => triggerPauseSubscription(u)}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                              title="Pause subscription access"
+                            >
+                              <Pause className="w-3 h-3" />
+                              <span>Pause</span>
+                            </button>
+                          )}
+
+                          {/* CANCEL / REVOKE SUBSCRIPTION */}
+                          <button
+                            type="button"
+                            onClick={() => triggerCancelSubscription(u)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                            title="Terminate active subscription"
+                          >
+                            <XCircle className="w-3 h-3" />
+                            <span>Cancel</span>
+                          </button>
+
+                          {/* BLOCK / UNBLOCK USER */}
+                          {u.status === 'Blocked' ? (
+                            <button
+                              type="button"
+                              onClick={() => triggerUnblock(u)}
+                              className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                              title="Unblock User"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Unblock</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => triggerBlock(u)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-900/30 hover:bg-rose-900/50 text-rose-300 border border-rose-700/50 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                              title="Block User from system"
+                            >
+                              <Ban className="w-3 h-3" />
+                              <span>Block</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expandable Device Tray */}
+                    {expandedUserUid === u.uid && (
+                      <tr className="bg-[#080E1C]/90 border-b border-slate-800 animate-fade-in">
+                        <td colSpan={12} className="p-4">
+                          <div className="bg-[#0B1528] border border-slate-800 rounded-xl p-4 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Smartphone className="w-4 h-4 text-blue-400" />
+                                <h4 className="text-xs font-bold text-white">
+                                  Logged-In Devices for {u.email}
+                                </h4>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold font-mono">
+                                  Limit: {getUserDeviceLimit(u.plan)} Devices ({u.plan})
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-slate-400">
+                                {userDevices[u.uid]?.filter((d) => d.device_status === 'active').length || 0} active device(s) currently recorded
+                              </span>
+                            </div>
+
+                            {(!userDevices[u.uid] || userDevices[u.uid].length === 0) ? (
+                              <div className="py-6 text-center text-slate-500 text-xs">
+                                No hardware devices currently registered for this user account.
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {userDevices[u.uid].map((dev) => {
+                                  const isActive = dev.device_status === 'active';
+                                  return (
+                                    <div
+                                      key={dev.id || dev.device_id}
+                                      className="p-3 rounded-lg bg-[#080E1C] border border-slate-800 flex flex-col justify-between gap-2.5 text-xs"
+                                    >
+                                      <div>
+                                        <div className="flex items-center justify-between gap-2">
+                                          <div className="flex items-center gap-1.5 font-semibold text-white">
+                                            {dev.device_type === 'Mobile' ? (
+                                              <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                                            ) : dev.device_type === 'Tablet' ? (
+                                              <Tablet className="w-3.5 h-3.5 text-purple-400" />
+                                            ) : (
+                                              <Monitor className="w-3.5 h-3.5 text-blue-400" />
+                                            )}
+                                            <span className="truncate">{dev.device_name || 'Device'}</span>
+                                          </div>
+                                          {isActive ? (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                              Active
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[9px] font-bold">
+                                              Revoked
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[11px] text-slate-400 mt-1">
+                                          {dev.operating_system} • {dev.browser}
+                                        </div>
+                                        <div className="font-mono text-[10px] text-slate-500 mt-0.5 truncate" title={dev.device_id}>
+                                          ID: {dev.device_id}
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 mt-0.5">
+                                          Last Active: {dev.last_seen_at ? new Date(dev.last_seen_at).toLocaleString() : 'N/A'}
+                                        </div>
+                                      </div>
+
+                                      {isActive && (
+                                        <button
+                                          type="button"
+                                          onClick={() => triggerRemoveDevice(u, dev)}
+                                          className="w-full py-1.5 px-2 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                          title="Remotely log out this device"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                          <span>Remote Logout / Remove</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))
               )}
             </tbody>

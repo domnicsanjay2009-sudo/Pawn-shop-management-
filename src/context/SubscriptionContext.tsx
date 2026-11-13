@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { Subscription, PlanType } from '../types';
 import { getActiveSubscription, initiateRazorpayPayment } from '../services/subscriptionService';
@@ -19,8 +21,9 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const activeShopId = shopProfile?.shopId || (currentUser ? `shop_${currentUser.uid}` : null);
+
   const refreshSubscription = useCallback(async () => {
-    const activeShopId = shopProfile?.shopId || (currentUser ? `shop_${currentUser.uid}` : null);
     if (!activeShopId) {
       setSubscription(null);
       setLoading(false);
@@ -34,11 +37,58 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     } finally {
       setLoading(false);
     }
-  }, [shopProfile?.shopId, currentUser?.uid]);
+  }, [activeShopId]);
 
+  // Real-time Firestore listener for Instant Enforcement of Pause, Cancel, Approval, and Payment Unlock
   useEffect(() => {
-    refreshSubscription();
-  }, [refreshSubscription]);
+    if (!activeShopId) {
+      setSubscription(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const subDocRef = doc(db, 'subscriptions', activeShopId);
+    const unsubscribe = onSnapshot(
+      subDocRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setSubscription({
+            id: snap.id,
+            shopId: data.shopId || activeShopId,
+            plan: data.plan || 'Free',
+            amountPaise: data.amountPaise || 0,
+            startDate: data.startDate || Date.now(),
+            expiryDate: data.expiryDate || Date.now(),
+            status: data.status || 'Pending',
+            maxDevices: data.maxDevices || 3,
+            activeDeviceIds: data.activeDeviceIds || [],
+            entitlementSource: data.entitlementSource || 'SYSTEM',
+            paymentStatus: data.paymentStatus || 'UNPAID',
+            approvalType: data.approvalType,
+            approvedBy: data.approvedBy,
+            razorpayOrderId: data.razorpayOrderId || data.orderId,
+            razorpayPaymentId: data.razorpayPaymentId || data.paymentId,
+            createdAt: data.createdAt || data.startDate || Date.now(),
+          });
+        } else {
+          getActiveSubscription(activeShopId)
+            .then((fallbackSub) => setSubscription(fallbackSub))
+            .catch(() => setSubscription(null));
+        }
+        setLoading(false);
+      },
+      (err) => {
+        console.warn('Real-time subscription listener warning:', err);
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeShopId]);
 
   const hasActivePlan = !!(subscription && subscription.status === 'Approved' && subscription.expiryDate > Date.now());
   const isPremium = hasActivePlan && (

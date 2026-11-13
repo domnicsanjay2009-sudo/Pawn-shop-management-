@@ -92,16 +92,30 @@ export const AdminSupportChatView: React.FC = () => {
                     <span className="font-semibold text-white text-xs truncate">
                       {c.shopName || c.shopId}
                     </span>
-                    {(c.lastMessageAt || c.lastUpdated) && (
-                      <span className="text-[10px] text-slate-400 shrink-0 font-mono">
-                        {new Date(c.lastMessageAt || c.lastUpdated!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {c.lastSenderRole === 'shop_owner' && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-blue-500 text-white text-[9px] font-bold animate-pulse">
+                          NEW
+                        </span>
+                      )}
+                      {(c.lastMessageAt || c.lastUpdated) && (
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {new Date(c.lastMessageAt || c.lastUpdated!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-blue-300 font-mono font-medium truncate">
+                      {c.ownerEmail || c.shopId}
+                    </p>
+                    {c.ownerName && (
+                      <span className="text-[10px] text-slate-400 truncate max-w-[80px]">
+                        {c.ownerName}
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-blue-300/90 truncate font-mono">
-                    {c.ownerEmail || c.ownerName || c.shopId}
-                  </p>
-                  <p className="text-[11px] text-slate-400 truncate">
+                  <p className="text-[11px] text-slate-400 truncate mt-0.5">
                     {c.lastMessage || 'Channel established'}
                   </p>
                 </button>

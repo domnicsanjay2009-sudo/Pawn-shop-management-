@@ -9,7 +9,9 @@ import {
   Sparkles,
   Ban,
   PowerOff,
-  RefreshCw
+  RefreshCw,
+  Pause,
+  Play
 } from 'lucide-react';
 
 export type ActionCategory =
@@ -22,7 +24,10 @@ export type ActionCategory =
   | 'revoke_premium'
   | 'extend_subscription'
   | 'revoke_device'
-  | 'bulk_revoke_devices';
+  | 'bulk_revoke_devices'
+  | 'pause_subscription'
+  | 'unpause_subscription'
+  | 'cancel_subscription';
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -84,9 +89,20 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     switch (actionType) {
       case 'approve_premium':
       case 'grant_premium':
+      case 'unpause_subscription':
         return (
           <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/10">
-            <Sparkles className="w-6 h-6 text-emerald-400" />
+            {actionType === 'unpause_subscription' ? (
+              <Play className="w-6 h-6 text-emerald-400 fill-emerald-400" />
+            ) : (
+              <Sparkles className="w-6 h-6 text-emerald-400" />
+            )}
+          </div>
+        );
+      case 'pause_subscription':
+        return (
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/10">
+            <Pause className="w-6 h-6 text-amber-400" />
           </div>
         );
       case 'disable':
@@ -96,6 +112,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           </div>
         );
       case 'block':
+      case 'cancel_subscription':
         return (
           <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shadow-lg shadow-rose-500/10">
             <Ban className="w-6 h-6 text-rose-400" />

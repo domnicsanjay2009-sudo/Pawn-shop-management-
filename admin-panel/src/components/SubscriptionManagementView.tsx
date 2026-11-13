@@ -16,14 +16,21 @@ import {
   RefreshCw,
   Ban,
   ArrowUpRight,
-  MoreVertical
+  MoreVertical,
+  Pause,
+  Play,
+  XCircle
 } from 'lucide-react';
 import {
   SubscriptionItem,
   PaymentTxItem,
   grantComplimentaryPremium,
   revokeComplimentaryPremium,
-  extendSubscriptionValidity
+  extendSubscriptionValidity,
+  pauseSubscription,
+  unpauseSubscription,
+  cancelSubscription,
+  blockUserAccount
 } from '../services/adminDataService';
 import { ConfirmationModal, ActionCategory } from './ConfirmationModal';
 
@@ -147,12 +154,123 @@ export const SubscriptionManagementView: React.FC<SubscriptionManagementViewProp
     });
   };
 
+  const triggerPauseSubscription = (sub: SubscriptionItem) => {
+    setOpenMenuId(null);
+    setModalConfig({
+      isOpen: true,
+      actionType: 'pause_subscription',
+      title: 'Pause Customer Subscription',
+      targetSub: sub,
+      consequences:
+        'This will temporarily suspend customer access to the Main App (displaying "Your subscription is paused by Admin" screen) until you unpause them.',
+      confirmLabel: 'Pause Subscription',
+      confirmVariant: 'warning',
+      requiresReason: true,
+      reasonPlaceholder: 'Reason for pausing subscription (e.g. Account review, owner request)',
+    });
+  };
+
+  const triggerUnpauseSubscription = (sub: SubscriptionItem) => {
+    setOpenMenuId(null);
+    setModalConfig({
+      isOpen: true,
+      actionType: 'unpause_subscription',
+      title: 'Unpause Customer Subscription',
+      targetSub: sub,
+      consequences:
+        'This will restore active access to the Main App in real time without requiring customer re-login.',
+      confirmLabel: 'Unpause Subscription',
+      confirmVariant: 'success',
+      requiresReason: false,
+    });
+  };
+
+  const triggerCancelSubscription = (sub: SubscriptionItem) => {
+    setOpenMenuId(null);
+    setModalConfig({
+      isOpen: true,
+      actionType: 'cancel_subscription',
+      title: 'Decline / Cancel Subscription (Revoke)',
+      targetSub: sub,
+      consequences:
+        'This will immediately terminate the active subscription and revoke premium access, requiring the customer to subscribe again.',
+      confirmLabel: 'Cancel Subscription',
+      confirmVariant: 'danger',
+      requiresReason: true,
+      reasonPlaceholder: 'Reason for cancelling subscription (e.g. Customer request, policy breach)',
+    });
+  };
+
+  const triggerBlockUser = (sub: SubscriptionItem) => {
+    setOpenMenuId(null);
+    setModalConfig({
+      isOpen: true,
+      actionType: 'block',
+      title: 'Block User Account Access',
+      targetSub: sub,
+      consequences:
+        'This will completely block this user from logging into or using the Main App. All device sessions will be revoked.',
+      confirmLabel: 'Block User',
+      confirmVariant: 'danger',
+      requiresReason: true,
+      reasonPlaceholder: 'Reason for blocking user',
+    });
+  };
+
   const handleModalConfirm = async (reason: string) => {
     const sub = modalConfig.targetSub;
     if (!sub) return;
 
     try {
-      if (modalConfig.actionType === 'grant_premium') {
+      if (modalConfig.actionType === 'pause_subscription') {
+        const res = await pauseSubscription(
+          sub.shopId,
+          sub.shopId.replace('shop_', ''),
+          sub.ownerEmail || sub.shopId,
+          reason || 'Your subscription is paused by Admin. Please contact customer support.'
+        );
+        if (res.success) {
+          showNotification('success', `Subscription paused for ${sub.shopName || sub.shopId}.`);
+        } else {
+          showNotification('error', res.error || 'Failed to pause subscription.');
+        }
+      } else if (modalConfig.actionType === 'unpause_subscription') {
+        const res = await unpauseSubscription(
+          sub.shopId,
+          sub.shopId.replace('shop_', ''),
+          sub.ownerEmail || sub.shopId,
+          reason
+        );
+        if (res.success) {
+          showNotification('success', `Subscription unpaused for ${sub.shopName || sub.shopId}.`);
+        } else {
+          showNotification('error', res.error || 'Failed to unpause subscription.');
+        }
+      } else if (modalConfig.actionType === 'cancel_subscription') {
+        const res = await cancelSubscription(
+          sub.shopId,
+          sub.shopId.replace('shop_', ''),
+          sub.ownerEmail || sub.shopId,
+          reason || 'Subscription cancelled by Administrator'
+        );
+        if (res.success) {
+          showNotification('success', `Subscription cancelled for ${sub.shopName || sub.shopId}.`);
+        } else {
+          showNotification('error', res.error || 'Failed to cancel subscription.');
+        }
+      } else if (modalConfig.actionType === 'block') {
+        const res = await blockUserAccount(
+          sub.shopId,
+          sub.shopId.replace('shop_', ''),
+          sub.ownerEmail || sub.shopId,
+          reason || 'Account blocked by administrator'
+        );
+        if (res.success) {
+          showNotification('success', `User ${sub.ownerEmail || sub.shopId} has been blocked.`);
+        } else {
+          showNotification('error', res.error || 'Failed to block user.');
+        }
+      } else if (modalConfig.actionType === 'grant_premium') {
         const res = await grantComplimentaryPremium(
           sub.shopId,
           sub.shopId.replace('shop_', ''),
@@ -295,14 +413,14 @@ export const SubscriptionManagementView: React.FC<SubscriptionManagementViewProp
               <thead>
                 <tr className="border-b border-slate-800 bg-[#080E1C]/70 text-slate-400 font-semibold uppercase tracking-wider text-[11px] whitespace-nowrap">
                   <th className="py-3.5 px-4">User Email</th>
-                  <th className="py-3.5 px-4">Shop Name</th>
-                  <th className="py-3.5 px-4">Current Plan</th>
+                  <th className="py-3.5 px-4">Shop & Owner</th>
+                  <th className="py-3.5 px-4">Plan & Devices</th>
                   <th className="py-3.5 px-4">Start Date</th>
                   <th className="py-3.5 px-4">Expiry Date</th>
-                  <th className="py-3.5 px-4">Payment Status</th>
+                  <th className="py-3.5 px-4">Payment ID & Amount</th>
                   <th className="py-3.5 px-4">Subscription Status</th>
-                  <th className="py-3.5 px-4">Entitlement Source</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
+                  <th className="py-3.5 px-4">Source</th>
+                  <th className="py-3.5 px-4 text-right">Admin Controls</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -316,6 +434,8 @@ export const SubscriptionManagementView: React.FC<SubscriptionManagementViewProp
                   filteredSubs.map((s) => {
                     const daysRemaining = Math.max(0, Math.ceil((s.expiryDate - Date.now()) / (1000 * 60 * 60 * 24)));
                     const isApproved = s.status === 'Approved' && s.expiryDate > Date.now();
+                    const isPaused = s.status === 'Paused';
+                    const isCancelled = s.status === 'Cancelled';
 
                     return (
                       <tr key={s.id} className="hover:bg-slate-800/30 transition-colors whitespace-nowrap">
@@ -324,9 +444,10 @@ export const SubscriptionManagementView: React.FC<SubscriptionManagementViewProp
                           {s.ownerEmail || s.shopId}
                         </td>
 
-                        {/* 2. Shop Name */}
-                        <td className="py-3.5 px-4 font-semibold text-blue-400">
-                          {s.shopName || s.shopId}
+                        {/* 2. Shop & Owner */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-blue-400">{s.shopName || s.shopId}</div>
+                          <div className="text-[11px] text-slate-400">{s.ownerName || 'Owner'}</div>
                         </td>
 
                         {/* 3. Current Plan */}
@@ -348,20 +469,39 @@ export const SubscriptionManagementView: React.FC<SubscriptionManagementViewProp
                           </div>
                         </td>
 
-                        {/* 6. Payment Status */}
+                        {/* 6. Payment ID & Amount */}
                         <td className="py-3.5 px-4">
-                          {getPaymentBadge(s.paymentStatus)}
+                          <div className="font-mono text-xs text-emerald-400 font-semibold">
+                            {s.amountPaise
+                              ? `₹${(s.amountPaise / 100).toLocaleString('en-IN')}`
+                              : s.paymentStatus === 'PAID'
+                              ? '₹1,999 / ₹2,999'
+                              : 'Complimentary'}
+                          </div>
+                          <div className="font-mono text-[10px] text-slate-400 truncate max-w-[120px]" title={s.razorpayPaymentId || 'N/A'}>
+                            {s.razorpayPaymentId || (s.entitlementSource === 'ADMIN_GRANTED' ? 'Admin Grant' : 'N/A')}
+                          </div>
                         </td>
 
                         {/* 7. Subscription Status */}
                         <td className="py-3.5 px-4">
-                          {isApproved ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold">
-                              <CheckCircle2 className="w-3 h-3" />
-                              Active
+                          {isPaused ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold">
+                              <Pause className="w-3 h-3" />
+                              Paused by Admin
+                            </span>
+                          ) : isCancelled ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-bold">
+                              <XCircle className="w-3 h-3" />
+                              Cancelled
+                            </span>
+                          ) : isApproved ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Subscription Active
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-semibold">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-bold">
                               <AlertCircle className="w-3 h-3" />
                               Expired
                             </span>
@@ -373,73 +513,122 @@ export const SubscriptionManagementView: React.FC<SubscriptionManagementViewProp
                           {getEntitlementBadge(s.entitlementSource)}
                         </td>
 
-                        {/* 9. Actions Menu */}
+                        {/* 9. Direct Admin Controls & Actions Menu */}
                         <td className="py-3.5 px-4 text-right">
-                          <div className="relative inline-block text-left">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Direct Pause / Unpause Button */}
+                            {isPaused ? (
+                              <button
+                                type="button"
+                                onClick={() => triggerUnpauseSubscription(s)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                                title="Unpause Subscription Access"
+                              >
+                                <Play className="w-3 h-3 fill-emerald-400" />
+                                <span>Unpause</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => triggerPauseSubscription(s)}
+                                className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                                title="Pause Subscription Access"
+                              >
+                                <Pause className="w-3 h-3" />
+                                <span>Pause</span>
+                              </button>
+                            )}
+
+                            {/* Direct Cancel Button */}
                             <button
                               type="button"
-                              onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                              onClick={() => triggerCancelSubscription(s)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                              title="Cancel / Revoke Active Subscription"
                             >
-                              <MoreVertical className="w-4 h-4" />
+                              <XCircle className="w-3 h-3" />
+                              <span>Cancel</span>
                             </button>
 
-                            {openMenuId === s.id && (
-                              <>
-                                <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
-                                <div className="absolute right-0 mt-1 w-56 bg-[#0B1528] border border-slate-700 rounded-xl shadow-2xl z-50 py-1 text-xs divide-y divide-slate-800 animate-scale-up text-left">
-                                  {/* View Details */}
-                                  <button
-                                    onClick={() => {
-                                      setOpenMenuId(null);
-                                      setSelectedSubForDetails(s);
-                                    }}
-                                    className="w-full px-3 py-2 text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <Receipt className="w-4 h-4 text-blue-400" />
-                                    <span>View Subscription Details</span>
-                                  </button>
+                            {/* Direct Block Button */}
+                            <button
+                              type="button"
+                              onClick={() => triggerBlockUser(s)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-900/30 hover:bg-rose-900/50 text-rose-300 border border-rose-700/50 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                              title="Block User from System"
+                            >
+                              <Ban className="w-3 h-3" />
+                              <span>Block</span>
+                            </button>
 
-                                  {/* Grant Complimentary Premium */}
-                                  {s.plan !== 'Yearly Premium' && (
+                            {/* Additional Actions Dropdown */}
+                            <div className="relative inline-block text-left">
+                              <button
+                                type="button"
+                                onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                                title="More options"
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+
+                              {openMenuId === s.id && (
+                                <>
+                                  <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
+                                  <div className="absolute right-0 mt-1 w-56 bg-[#0B1528] border border-slate-700 rounded-xl shadow-2xl z-50 py-1 text-xs divide-y divide-slate-800 animate-scale-up text-left">
+                                    {/* View Details */}
                                     <button
-                                      onClick={() => triggerGrantPremium(s)}
-                                      className="w-full px-3 py-2 text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                      onClick={() => {
+                                        setOpenMenuId(null);
+                                        setSelectedSubForDetails(s);
+                                      }}
+                                      className="w-full px-3 py-2 text-slate-200 hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                                     >
-                                      <Sparkles className="w-4 h-4 text-emerald-400" />
-                                      <span>Grant Complimentary Premium</span>
+                                      <Receipt className="w-4 h-4 text-blue-400" />
+                                      <span>View Subscription Details</span>
                                     </button>
-                                  )}
 
-                                  {/* Extend Validity */}
-                                  <button
-                                    onClick={() => triggerExtendValidity(s, 90)}
-                                    className="w-full px-3 py-2 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <Calendar className="w-4 h-4 text-blue-400" />
-                                    <span>Extend Validity (+90 Days)</span>
-                                  </button>
-                                  <button
-                                    onClick={() => triggerExtendValidity(s, 365)}
-                                    className="w-full px-3 py-2 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <Calendar className="w-4 h-4 text-blue-400" />
-                                    <span>Extend Validity (+365 Days)</span>
-                                  </button>
+                                    {/* Grant Complimentary Premium */}
+                                    {s.plan !== 'Yearly Premium' && (
+                                      <button
+                                        onClick={() => triggerGrantPremium(s)}
+                                        className="w-full px-3 py-2 text-emerald-400 hover:bg-emerald-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                      >
+                                        <Sparkles className="w-4 h-4 text-emerald-400" />
+                                        <span>Grant Complimentary Premium</span>
+                                      </button>
+                                    )}
 
-                                  {/* Revoke Complimentary Premium */}
-                                  {(s.entitlementSource === 'ADMIN_GRANTED' || s.entitlementSource === 'COMPLIMENTARY') && (
+                                    {/* Extend Validity */}
                                     <button
-                                      onClick={() => triggerRevokePremium(s)}
-                                      className="w-full px-3 py-2 text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                      onClick={() => triggerExtendValidity(s, 90)}
+                                      className="w-full px-3 py-2 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer"
                                     >
-                                      <Ban className="w-4 h-4 text-rose-400" />
-                                      <span>Revoke Admin Premium</span>
+                                      <Calendar className="w-4 h-4 text-blue-400" />
+                                      <span>Extend Validity (+90 Days)</span>
                                     </button>
-                                  )}
-                                </div>
-                              </>
-                            )}
+                                    <button
+                                      onClick={() => triggerExtendValidity(s, 365)}
+                                      className="w-full px-3 py-2 text-blue-400 hover:bg-blue-500/10 flex items-center gap-2 cursor-pointer"
+                                    >
+                                      <Calendar className="w-4 h-4 text-blue-400" />
+                                      <span>Extend Validity (+365 Days)</span>
+                                    </button>
+
+                                    {/* Revoke Complimentary Premium */}
+                                    {(s.entitlementSource === 'ADMIN_GRANTED' || s.entitlementSource === 'COMPLIMENTARY') && (
+                                      <button
+                                        onClick={() => triggerRevokePremium(s)}
+                                        className="w-full px-3 py-2 text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 cursor-pointer font-medium"
+                                      >
+                                        <Ban className="w-4 h-4 text-rose-400" />
+                                        <span>Revoke Admin Premium</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -530,20 +719,42 @@ export const SubscriptionManagementView: React.FC<SubscriptionManagementViewProp
 
             <div className="grid grid-cols-2 gap-3 bg-[#080E1C] p-4 rounded-xl border border-slate-800">
               <div>
-                <span className="text-slate-500 text-[11px]">Shop ID:</span>
-                <p className="font-mono text-white font-medium">{selectedSubForDetails.shopId}</p>
+                <span className="text-slate-500 text-[11px]">User Email:</span>
+                <p className="font-mono text-white font-medium break-all">{selectedSubForDetails.ownerEmail || 'N/A'}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 text-[11px]">Owner Name:</span>
+                <p className="text-white font-semibold">{selectedSubForDetails.ownerName || 'Owner'}</p>
               </div>
               <div>
                 <span className="text-slate-500 text-[11px]">Shop Name:</span>
                 <p className="text-blue-400 font-semibold">{selectedSubForDetails.shopName}</p>
               </div>
               <div>
+                <span className="text-slate-500 text-[11px]">Shop ID:</span>
+                <p className="font-mono text-slate-300 font-medium">{selectedSubForDetails.shopId}</p>
+              </div>
+              <div>
                 <span className="text-slate-500 text-[11px]">Current Plan:</span>
                 <p className="font-bold text-white">{selectedSubForDetails.plan}</p>
               </div>
               <div>
-                <span className="text-slate-500 text-[11px]">Entitlement Source:</span>
-                <p className="text-purple-400 font-semibold">{selectedSubForDetails.entitlementSource}</p>
+                <span className="text-slate-500 text-[11px]">Subscription Status:</span>
+                <p className="text-emerald-400 font-bold">{selectedSubForDetails.status}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 text-[11px]">Payment ID:</span>
+                <p className="font-mono text-emerald-400 font-semibold">{selectedSubForDetails.razorpayPaymentId || 'N/A'}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 text-[11px]">Amount Paid:</span>
+                <p className="font-mono text-emerald-400 font-bold">
+                  {selectedSubForDetails.amountPaise
+                    ? `₹${(selectedSubForDetails.amountPaise / 100).toLocaleString('en-IN')}`
+                    : selectedSubForDetails.paymentStatus === 'PAID'
+                    ? 'Paid'
+                    : 'Complimentary'}
+                </p>
               </div>
               <div>
                 <span className="text-slate-500 text-[11px]">Payment Status:</span>

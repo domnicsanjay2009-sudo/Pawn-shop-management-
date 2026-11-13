@@ -21,9 +21,10 @@ import { PlanType, StaffPass } from '../../types';
 
 interface SubscriptionPlansProps {
   onNavigate?: (path: string) => void;
+  onPaymentSuccess?: () => void;
 }
 
-export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({ onNavigate }) => {
+export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({ onNavigate, onPaymentSuccess }) => {
   const { subscription, isPremium, hasActivePlan, upgradePlan, refreshSubscription } =
     useSubscription();
   const { shopProfile, profileLoading, profileError, refreshProfile } = useAuth();
@@ -67,6 +68,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({ onNavigate
         setLoadingPlan(null);
         showToast(`Congratulations! ${plan} Plan activated successfully.`, 'success');
         refreshSubscription();
+        onPaymentSuccess?.();
       },
       (err) => {
         setLoadingPlan(null);

@@ -22,6 +22,7 @@ import { AddBillForm } from './components/bills/AddBillForm';
 import { AddPaymentModal } from './components/payments/AddPaymentModal';
 import { CloseBillModal } from './components/closing/CloseBillModal';
 import { SubscriptionPlans } from './components/subscription/SubscriptionPlans';
+import { SubscriptionPausedScreen } from './components/subscription/SubscriptionPausedScreen';
 import { SubscriptionHistory } from './components/subscription/SubscriptionHistory';
 import { ChatContainer } from './components/chat/ChatContainer';
 import { AppSettings } from './components/settings/AppSettings';
@@ -70,6 +71,7 @@ const MainApplication: React.FC = () => {
     shouldShowLogin,
     consumeShouldShowLogin,
   } = useAuth();
+  const { subscription, hasActivePlan } = useSubscription();
   const { isLocked } = useAppLock();
   const {
     isDemoMode,
@@ -401,6 +403,16 @@ const MainApplication: React.FC = () => {
     return <AppLockScreen />;
   }
 
+  // Real-time Subscription Pause Screen (Enforced instantaneously from Admin Panel)
+  const isSubscriptionPaused =
+    subscription?.status === 'Paused' ||
+    Boolean(shopProfile?.isSuspended && shopProfile?.disabledReason?.toLowerCase().includes('pause')) ||
+    Boolean(shopProfile?.suspensionReason?.toLowerCase().includes('pause'));
+
+  if (currentUser && isSubscriptionPaused) {
+    return <SubscriptionPausedScreen reason={shopProfile?.disabledReason || shopProfile?.suspensionReason} />;
+  }
+
   const titles: Record<NavigationTab, string> = {
     home: 'Shop Dashboard',
     parties: 'Customers & Parties',
@@ -503,7 +515,14 @@ const MainApplication: React.FC = () => {
             </div>
           )}
 
-          {currentTab === 'subscription' && <SubscriptionPlans onNavigate={navigateTo} />}
+          {currentTab === 'subscription' && (
+            <SubscriptionPlans
+              onNavigate={navigateTo}
+              onPaymentSuccess={() => {
+                setCurrentTab('home');
+              }}
+            />
+          )}
 
           {currentTab === 'subscription-history' && <SubscriptionHistory />}
 
