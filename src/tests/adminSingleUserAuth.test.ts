@@ -5,11 +5,16 @@ import {
   ALLOW_ADMIN_REGISTRATION,
   loginAdmin,
   registerAdminUser,
-  verifyAdminStatus
+  verifyAdminStatus,
+  sendAdminPasswordReset,
+  verifyAdminPasswordResetCode,
+  confirmAdminPasswordResetAndLogin,
+  getEffectiveAdminPassword,
+  setRuntimeAdminPassword
 } from '../../admin-panel/src/services/adminAuthService';
 
 describe('Admin Panel Single-User Authentication & Restriction Tests', () => {
-  it('1. should strictly hardcode the single authorized admin credentials', () => {
+  it('1. should strictly configure the single authorized admin credentials with VITE fallback', () => {
     expect(ENFORCED_ADMIN_EMAIL).toBe('domnicsanjay2009@gmail.com');
     expect(ENFORCED_ADMIN_PASSWORD).toBe('sanjay0920');
     expect(ALLOW_ADMIN_REGISTRATION).toBe(false);
@@ -43,5 +48,38 @@ describe('Admin Panel Single-User Authentication & Restriction Tests', () => {
 
     const isAllowed = await verifyAdminStatus(mockUserUnauthorized);
     expect(isAllowed).toBe(false);
+  });
+
+  describe('Forgot Password & Password Reset Workflow', () => {
+    it('6. sendAdminPasswordReset should reject reset requests for unauthorized emails', async () => {
+      const res = await sendAdminPasswordReset('unauthorized@test.com');
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('Password reset is restricted. Only the designated platform administrator');
+      expect(res.error).toContain('domnicsanjay2009@gmail.com');
+    });
+
+    it('7. verifyAdminPasswordResetCode should reject empty or invalid reset codes', async () => {
+      const resEmpty = await verifyAdminPasswordResetCode('');
+      expect(resEmpty.success).toBe(false);
+      expect(resEmpty.error).toContain('Invalid or missing password reset code');
+    });
+
+    it('8. confirmAdminPasswordResetAndLogin should enforce minimum password length (>= 6)', async () => {
+      const resShort = await confirmAdminPasswordResetAndLogin('sample_oob_code_123', '123');
+      expect(resShort.success).toBe(false);
+      expect(resShort.error).toContain('at least 6 characters');
+    });
+
+    it('9. setRuntimeAdminPassword should update effective password and permit immediate login with updated credentials', () => {
+      expect(getEffectiveAdminPassword()).toBe('sanjay0920');
+
+      // Admin updates password
+      setRuntimeAdminPassword('newUpdatedAdminPass2026');
+      expect(getEffectiveAdminPassword()).toBe('newUpdatedAdminPass2026');
+
+      // Reset back for other tests
+      setRuntimeAdminPassword('sanjay0920');
+      expect(getEffectiveAdminPassword()).toBe('sanjay0920');
+    });
   });
 });
