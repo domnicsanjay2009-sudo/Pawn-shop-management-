@@ -281,6 +281,24 @@ export interface AuditLog {
   timestamp: number;
 }
 
+export interface FinancialEditAuditRecord {
+  id: string;
+  shopId: string;
+  entityType: 'bill' | 'payment' | 'closing_bill';
+  entityId: string;
+  linkedBillId: string;
+  billNumber?: string;
+  partyId?: string;
+  partyName?: string;
+  originalValues: Record<string, any>;
+  updatedValues: Record<string, any>;
+  reason: string;
+  performedBy: string;
+  performedByUid: string;
+  timestamp: number;
+  recalculatedTransactionsCount?: number;
+}
+
 export interface AppLockConfig {
   type: 'pin' | 'password' | 'none';
   hash: string;

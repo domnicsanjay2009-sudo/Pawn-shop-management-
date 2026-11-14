@@ -9,7 +9,8 @@ import {
   Building,
   User,
   ArrowDownLeft,
-  FileText
+  FileText,
+  Edit3
 } from 'lucide-react';
 import { Payment, Party, Bill } from '../../types';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
@@ -20,6 +21,7 @@ interface PaymentsViewProps {
   bills: Bill[];
   parties: Party[];
   onOpenPaymentModal: () => void;
+  onEditPayment?: (payment: Payment) => void;
 }
 
 export const PaymentsView: React.FC<PaymentsViewProps> = ({
@@ -27,6 +29,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
   bills,
   parties,
   onOpenPaymentModal,
+  onEditPayment,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [modeFilter, setModeFilter] = useState<string>('All');
@@ -165,7 +168,8 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
                 <th className="p-4">Interest Portion</th>
                 <th className="p-4">Principal Reduction</th>
                 <th className="p-4">Payment Mode</th>
-                <th className="p-4 pr-6">Notes</th>
+                <th className="p-4">Notes</th>
+                <th className="p-4 pr-6 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -212,8 +216,20 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
                         <span>{p.paymentMode}</span>
                       </span>
                     </td>
-                    <td className="p-4 pr-6 text-slate-400 truncate max-w-xs">
+                    <td className="p-4 text-slate-400 truncate max-w-xs">
                       {p.notes || '—'}
+                    </td>
+                    <td className="p-4 pr-6 text-right">
+                      {onEditPayment && (
+                        <button
+                          onClick={() => onEditPayment(p)}
+                          title="Edit / Alter Payment"
+                          className="px-2.5 py-1 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors inline-flex items-center space-x-1 cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

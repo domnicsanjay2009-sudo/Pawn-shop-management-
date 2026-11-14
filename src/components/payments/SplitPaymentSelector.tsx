@@ -114,11 +114,11 @@ export const SplitPaymentSelector: React.FC<SplitPaymentSelectorProps> = ({
           </div>
         </div>
 
-        {/* 2. GPay / PhonePe Amount */}
+        {/* 2. GPay / UPI Amount */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-white border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
           <div className="flex items-center space-x-2">
             <span className="w-2.5 h-2.5 rounded-full bg-sky-500 shrink-0" />
-            <span className="font-bold text-brand-950 text-xs sm:text-sm">GPay / PhonePe Amount</span>
+            <span className="font-bold text-brand-950 text-xs sm:text-sm">GPay / UPI Amount</span>
           </div>
           <div className="relative w-full sm:w-52">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-xs">
@@ -136,11 +136,14 @@ export const SplitPaymentSelector: React.FC<SplitPaymentSelectorProps> = ({
           </div>
         </div>
 
-        {/* 3. Net Banking Amount */}
+        {/* 3. Others (Net Banking / Cheque) */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-white border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
           <div className="flex items-center space-x-2">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
-            <span className="font-bold text-brand-950 text-xs sm:text-sm">Net Banking Amount</span>
+            <div>
+              <span className="font-bold text-brand-950 text-xs sm:text-sm">Others Amount</span>
+              <span className="text-[10px] text-slate-400 block">Net Banking / Cheque / Card</span>
+            </div>
           </div>
           <div className="relative w-full sm:w-52">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-xs">

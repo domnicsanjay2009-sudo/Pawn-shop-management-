@@ -26,6 +26,9 @@ import { PartyDetailView } from './components/parties/PartyDetailView';
 import { AddBillForm } from './components/bills/AddBillForm';
 import { AddPaymentModal } from './components/payments/AddPaymentModal';
 import { CloseBillModal } from './components/closing/CloseBillModal';
+import { EditBillModal } from './components/bills/EditBillModal';
+import { EditPaymentModal } from './components/payments/EditPaymentModal';
+import { EditClosingBillModal } from './components/closing/EditClosingBillModal';
 import { BillReceiptModal } from './components/common/BillReceiptModal';
 import { AppSettings } from './components/settings/AppSettings';
 import { SubscriptionPlans } from './components/subscription/SubscriptionPlans';
@@ -165,6 +168,11 @@ const MainApplication: React.FC = () => {
   const [receiptBill, setReceiptBill] = useState<Bill | null>(null);
   const [receiptParty, setReceiptParty] = useState<Party | null>(null);
   const [receiptClosing, setReceiptClosing] = useState<ClosingBill | null>(null);
+
+  // 3 Edit / Alter System States
+  const [editingBill, setEditingBill] = useState<Bill | null>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [editingClosingBill, setEditingClosingBill] = useState<ClosingBill | null>(null);
 
   const handleViewReceipt = (bill: Bill, party?: Party, closing?: ClosingBill) => {
     setReceiptBill(bill);
@@ -361,37 +369,39 @@ const MainApplication: React.FC = () => {
   };
 
   const handleOpenAddPaymentFromHome = () => {
-    const candidateParty =
-      activeParties.find((p) => activeBills.some((b) => b.partyId === p.id && b.status === 'Active')) ||
-      activeParties[0];
-
-    if (!candidateParty) {
-      showToast('Please add a customer and create a bill first.', 'info');
-      setCurrentTab('parties');
-      return;
-    }
-
-    const candidateBill = activeBills.find(
-      (b) => b.partyId === candidateParty.id && b.status === 'Active'
-    );
-
-    setModalParty(candidateParty);
-    setModalBill(candidateBill || null);
+    setModalParty(null);
+    setModalBill(null);
     setShowAddPaymentModal(true);
   };
 
   const handleOpenAddClosingFromHome = () => {
-    const candidateBill = activeBills.find((b) => b.status === 'Active');
-    if (!candidateBill) {
-      showToast('No active bills available to close.', 'info');
-      return;
-    }
-    const candidateParty = activeParties.find((p) => p.id === candidateBill.partyId);
-    if (!candidateParty) return;
-
-    setModalParty(candidateParty);
-    setModalBill(candidateBill);
+    setModalParty(null);
+    setModalBill(null);
     setShowCloseBillModal(true);
+  };
+
+  const handleSaveEditedBill = async (updatedBill: Bill) => {
+    setBills((prev) => prev.map((b) => (b.id === updatedBill.id ? updatedBill : b)));
+    if (!isDemoMode && shopProfile?.shopId) {
+      await loadProductionData();
+    }
+    showToast(`Bill ${updatedBill.billNumber} altered and financial history recalculated.`, 'success');
+  };
+
+  const handleSaveEditedPayment = async (updatedPayment: Payment) => {
+    setPayments((prev) => prev.map((p) => (p.id === updatedPayment.id ? updatedPayment : p)));
+    if (!isDemoMode && shopProfile?.shopId) {
+      await loadProductionData();
+    }
+    showToast('Payment altered and financial balance recalculated.', 'success');
+  };
+
+  const handleSaveEditedClosingBill = async (updatedClosing: ClosingBill) => {
+    setClosingBills((prev) => prev.map((c) => (c.id === updatedClosing.id ? updatedClosing : c)));
+    if (!isDemoMode && shopProfile?.shopId) {
+      await loadProductionData();
+    }
+    showToast('Closing settlement altered and linked records synchronized.', 'success');
   };
 
   // Public Pages (accessible without login, on direct URL, and after browser refresh)
@@ -559,6 +569,7 @@ const MainApplication: React.FC = () => {
                 setShowCloseBillModal(true);
               }}
               onViewReceipt={handleViewReceipt}
+              onEditBill={(b) => setEditingBill(b)}
             />
           )}
 
@@ -569,6 +580,7 @@ const MainApplication: React.FC = () => {
               bills={activeBills}
               parties={activeParties}
               onOpenPaymentModal={handleOpenAddPaymentFromHome}
+              onEditPayment={(p) => setEditingPayment(p)}
             />
           )}
 
@@ -580,6 +592,7 @@ const MainApplication: React.FC = () => {
               parties={activeParties}
               onOpenCloseBillModal={handleOpenAddClosingFromHome}
               onViewReceipt={handleViewReceipt}
+              onEditClosingBill={(c) => setEditingClosingBill(c)}
             />
           )}
 
@@ -608,6 +621,9 @@ const MainApplication: React.FC = () => {
                     setModalBill(b);
                     setShowCloseBillModal(true);
                   }}
+                  onEditBill={(b) => setEditingBill(b)}
+                  onEditPayment={(p) => setEditingPayment(p)}
+                  onEditClosingBill={(c) => setEditingClosingBill(c)}
                 />
               ) : (
                 <>
@@ -677,30 +693,64 @@ const MainApplication: React.FC = () => {
       </button>
 
       {/* Modals */}
-      {showAddPaymentModal && modalParty && (
+      {showAddPaymentModal && (
         <AddPaymentModal
           party={modalParty}
-          bill={modalBill || undefined}
-          allPartyBills={activeBills.filter((b) => b.partyId === modalParty.id)}
+          bill={modalBill}
+          allPartyBills={modalParty ? activeBills.filter((b) => b.partyId === modalParty.id) : activeBills}
+          allParties={activeParties}
+          allBills={activeBills}
           onClose={() => {
             setShowAddPaymentModal(false);
+            setModalParty(null);
             setModalBill(null);
           }}
           onSavePayment={handleSavePayment}
         />
       )}
 
-      {showCloseBillModal && modalParty && modalBill && (
+      {showCloseBillModal && (
         <CloseBillModal
           party={modalParty}
           bill={modalBill}
-          allPartyBills={activeBills.filter((b) => b.partyId === modalParty.id)}
+          allPartyBills={modalParty ? activeBills.filter((b) => b.partyId === modalParty.id) : activeBills}
+          allParties={activeParties}
+          allBills={activeBills}
           settings={settings}
           onClose={() => {
             setShowCloseBillModal(false);
+            setModalParty(null);
             setModalBill(null);
           }}
           onConfirmClose={handleCloseBill}
+        />
+      )}
+
+      {/* 3 Edit / Alter System Modals */}
+      {editingBill && (
+        <EditBillModal
+          bill={editingBill}
+          party={activeParties.find((p) => p.id === editingBill.partyId)}
+          onClose={() => setEditingBill(null)}
+          onSuccess={handleSaveEditedBill}
+        />
+      )}
+
+      {editingPayment && (
+        <EditPaymentModal
+          payment={editingPayment}
+          availableBills={activeBills}
+          onClose={() => setEditingPayment(null)}
+          onSuccess={handleSaveEditedPayment}
+        />
+      )}
+
+      {editingClosingBill && (
+        <EditClosingBillModal
+          closingBill={editingClosingBill}
+          linkedBill={activeBills.find((b) => b.id === editingClosingBill.billId)}
+          onClose={() => setEditingClosingBill(null)}
+          onSuccess={handleSaveEditedClosingBill}
         />
       )}
 

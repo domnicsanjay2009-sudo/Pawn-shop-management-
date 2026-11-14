@@ -10,7 +10,8 @@ import {
   ChevronDown,
   X,
   Coins,
-  ArrowUpRight
+  ArrowUpRight,
+  Edit3
 } from 'lucide-react';
 import { Bill, Party, AppSettings } from '../../types';
 import { formatCurrencyPaise, formatDate } from '../../utils/formatters';
@@ -26,6 +27,7 @@ interface BillsViewProps {
   onOpenPayment: (party: Party, bill: Bill) => void;
   onOpenCloseBill: (party: Party, bill: Bill) => void;
   onViewReceipt: (bill: Bill, party?: Party) => void;
+  onEditBill?: (bill: Bill, party?: Party) => void;
 }
 
 export const BillsView: React.FC<BillsViewProps> = ({
@@ -36,6 +38,7 @@ export const BillsView: React.FC<BillsViewProps> = ({
   onOpenPayment,
   onOpenCloseBill,
   onViewReceipt,
+  onEditBill,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Closed'>('All');
@@ -253,6 +256,15 @@ export const BillsView: React.FC<BillsViewProps> = ({
                       </td>
                       <td className="p-4 pr-6 text-right">
                         <div className="flex items-center justify-end space-x-1.5">
+                          {onEditBill && (
+                            <button
+                              onClick={() => onEditBill(b, p)}
+                              title="Edit / Alter Bill"
+                              className="p-1.5 text-amber-600 hover:text-amber-700 rounded-lg hover:bg-amber-50 transition-colors cursor-pointer"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => onViewReceipt(b, p)}
                             title="View Receipt"

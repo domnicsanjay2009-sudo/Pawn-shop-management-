@@ -14,7 +14,8 @@ import {
   Percent,
   Clock,
   User,
-  Paperclip
+  Paperclip,
+  Edit3
 } from 'lucide-react';
 import { Party, Bill, Payment, ClosingBill } from '../../types';
 import { formatCurrencyPaise, formatDate, formatDateTime } from '../../utils/formatters';
@@ -30,6 +31,9 @@ interface PartyDetailViewProps {
   onOpenAddBill: (party: Party) => void;
   onOpenPayment: (party: Party, bill?: Bill) => void;
   onOpenCloseBill: (party: Party, bill: Bill) => void;
+  onEditBill?: (bill: Bill, party: Party) => void;
+  onEditPayment?: (payment: Payment) => void;
+  onEditClosingBill?: (closingBill: ClosingBill) => void;
 }
 
 type ActivityFilter = 'All' | 'Bills' | 'Payments' | 'Closing Bills' | 'Expired Bills';
@@ -51,6 +55,9 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
   onOpenAddBill,
   onOpenPayment,
   onOpenCloseBill,
+  onEditBill,
+  onEditPayment,
+  onEditClosingBill,
 }) => {
   const [filter, setFilter] = useState<ActivityFilter>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -431,23 +438,34 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Actions for Active Bill */}
-                    {!isClosed && (
-                      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                    {/* Actions for Bill */}
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                      {onEditBill && (
                         <button
-                          onClick={() => onOpenPayment(party, bill)}
-                          className="px-3 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                          onClick={() => onEditBill(bill, party)}
+                          className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center space-x-1"
                         >
-                          Add Payment
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
                         </button>
-                        <button
-                          onClick={() => onOpenCloseBill(party, bill)}
-                          className="px-3 py-1 bg-slate-100 hover:bg-brand-900 hover:text-white text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                        >
-                          Close Bill
-                        </button>
-                      </div>
-                    )}
+                      )}
+                      {!isClosed && (
+                        <>
+                          <button
+                            onClick={() => onOpenPayment(party, bill)}
+                            className="px-3 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                          >
+                            Add Payment
+                          </button>
+                          <button
+                            onClick={() => onOpenCloseBill(party, bill)}
+                            className="px-3 py-1 bg-slate-100 hover:bg-brand-900 hover:text-white text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                          >
+                            Close Bill
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -499,13 +517,24 @@ export const PartyDetailView: React.FC<PartyDetailViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-emerald-600">
-                      + {formatCurrencyPaise(payment.amountPaise)}
-                    </p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      Interest: {formatCurrencyPaise(payment.interestPortionPaise)} | Principal: {formatCurrencyPaise(payment.principalPortionPaise)}
-                    </p>
+                  <div className="text-right flex items-center space-x-3 shrink-0">
+                    <div>
+                      <p className="text-sm font-bold text-emerald-600">
+                        + {formatCurrencyPaise(payment.amountPaise)}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Interest: {formatCurrencyPaise(payment.interestPortionPaise)} | Principal: {formatCurrencyPaise(payment.principalPortionPaise)}
+                      </p>
+                    </div>
+                    {onEditPayment && (
+                      <button
+                        onClick={() => onEditPayment(payment)}
+                        title="Edit Payment"
+                        className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
